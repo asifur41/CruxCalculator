@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CruxCalculator</string>
+    <string name="tab_basic">Basic</string>
+    <string name="tab_scientific">Scientific</string>
+    <string name="tab_convert">Convert</string>
+    <string name="tab_tape">Tape</string>
+    <string name="tagline">The private, ad-free calculator for people who actually calculate.</string>
+    <string name="privacy_summary">No ads. No subscription. No tracking. No account. Works fully offline. Everything you calculate stays on this device.</string>
+</resources>

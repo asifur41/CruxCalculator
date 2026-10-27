@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER icon: a simple tape strip with a plus sign. See docs/ICON.md to replace it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,26 L78,26 Q82,26 82,30 L82,80 L75,75 L68,80 L61,75 L54,80 L47,75 L40,80 L33,75 L26,80 L26,30 Q26,26 30,26 Z" />
+    <path
+        android:fillColor="#FF7C9CFF"
+        android:pathData="M36,38 L72,38 L72,42 L36,42 Z" />
+    <path
+        android:fillColor="#FF7C9CFF"
+        android:pathData="M36,48 L62,48 L62,52 L36,52 Z" />
+    <path
+        android:fillColor="#FF1B2440"
+        android:pathData="M52,56 L56,56 L56,62 L62,62 L62,66 L56,66 L56,72 L52,72 L52,66 L46,66 L46,62 L52,62 Z" />
+</vector>

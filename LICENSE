@@ -1,0 +1,14 @@
+CruxCalculator - Source Available, All Rights Reserved
+
+Copyright (c) 2026 THE REPOSITORY OWNER. All rights reserved.
+
+This is a placeholder licence. Replace "THE REPOSITORY OWNER" with your name or company, or
+replace this whole file with the licence you prefer (for example MIT or Apache-2.0 if you
+decide to open-source the project).
+
+Without a different licence from the copyright holder, you may not copy, distribute or sell
+this software or derivative works.
+
+Third-party components used by this project (AndroidX, Jetpack Compose, Material 3,
+Room, DataStore, Hilt/Dagger, Kotlin and kotlinx.coroutines) are licensed under the
+Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
