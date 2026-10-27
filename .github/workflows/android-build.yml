@@ -21,8 +21,6 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Optional release-signing secrets. If they are missing the build still succeeds and
-      # produces UNSIGNED release artifacts (see README: "Signing").
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -38,15 +36,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - - name: Set up Android SDK
-  uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-- name: Install Android SDK platform and build tools
-  shell: bash
-  run: |
-    echo "ANDROID_HOME=$ANDROID_HOME"
-    echo "PATH=$PATH"
-    sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+      - name: Install Android SDK platform and build tools
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
+          sdkmanager --sdk_root="$ANDROID_HOME" --install "cmdline-tools;latest" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
 
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
@@ -65,10 +63,10 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Build debug APK (installable, for quick testing)
+      - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Build release AAB (for Google Play)
+      - name: Build release AAB
         run: ./gradlew bundleRelease --stacktrace
 
       - name: Build release APK
