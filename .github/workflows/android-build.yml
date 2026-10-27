@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 60
 
     env:
+      # Optional release-signing secrets. If they are missing the build still succeeds and
+      # produces UNSIGNED release artifacts (see README: "Signing").
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -36,15 +38,22 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK platform and build tools
-        shell: bash
+      # GitHub's ubuntu-latest runners already contain the Android SDK (ANDROID_HOME), so no extra SDK
+      # installer action is used. We only accept licences and best-effort install the needed platform;
+      # if anything is missing, the Android Gradle Plugin downloads it by itself (licences are accepted).
+      - name: Prepare Android SDK
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
-          sdkmanager --sdk_root="$ANDROID_HOME" --install "cmdline-tools;latest" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          SDKMANAGER="$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n 1 || true)"
+          echo "sdkmanager: ${SDKMANAGER:-not found}"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;35.0.0" > sdk-install.log 2>&1 \
+              || { echo "::warning::sdkmanager could not install packages; Gradle will try instead"; tail -n 20 sdk-install.log; }
+          fi
+          echo "Installed platforms:"; ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          echo "Installed build-tools:"; ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
 
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
@@ -63,10 +72,10 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Build debug APK
+      - name: Build debug APK (installable, for quick testing)
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Build release AAB
+      - name: Build release AAB (for Google Play)
         run: ./gradlew bundleRelease --stacktrace
 
       - name: Build release APK
