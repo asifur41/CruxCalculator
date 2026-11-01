@@ -30,6 +30,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.unit.dp
 import com.tapecalc.core.data.settings.AppSettings
 import com.tapecalc.core.math.AngleMode
+import com.tapecalc.core.math.NumberNotation
 import com.tapecalc.core.ui.ButtonShape
 import com.tapecalc.core.ui.ColorDot
 import com.tapecalc.core.ui.KeypadStyle
@@ -143,6 +144,15 @@ fun SettingsScreen(
         Text("Angle unit", style = MaterialTheme.typography.labelLarge)
         ChipRow(AngleMode.entries, settings.angleMode, { it.name }, { it.label }) { v ->
             onChange { it.copy(angleMode = v.name) }
+        }
+        Text("Number notation", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+        Text(
+            "How the main result is written: Auto (12345), Scientific (1.2345E4) or Engineering (12.345E3). Display only; tape entries, copying and exports keep the normal form.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ChipRow(NumberNotation.entries, settings.numberNotation, { it.name }, { it.label }) { v ->
+            onChange { it.copy(numberNotation = v.name) }
         }
         SwitchRow(
             title = "Update later results automatically",

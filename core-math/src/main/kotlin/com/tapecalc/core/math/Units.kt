@@ -213,6 +213,9 @@ object UnitRegistry {
 
     fun byCategory(category: UnitCategory): List<UnitDef> = all.filter { it.category == category }
 
+    /** Every spelling a unit can be typed with (symbols, names, plurals); used for "did you mean" hints. */
+    fun aliasNames(): Set<String> = exactIndex.keys
+
     fun find(text: String): UnitDef? {
         val t = text.trim()
         if (t.isEmpty()) return null

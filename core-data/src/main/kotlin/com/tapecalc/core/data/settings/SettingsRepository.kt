@@ -36,6 +36,8 @@ data class AppSettings(
     val autoRecalc: Boolean = true,
     val groupDigits: Boolean = false,
     val fractionByDefault: Boolean = false,
+    /** AUTO, SCIENTIFIC or ENGINEERING (see NumberNotation in core-math). Display only. */
+    val numberNotation: String = "AUTO",
     val workspaceId: Long = 0
 )
 
@@ -57,6 +59,7 @@ class SettingsRepository(private val context: Context) {
         val AUTO_RECALC = booleanPreferencesKey("auto_recalc")
         val GROUP = booleanPreferencesKey("group_digits")
         val FRACTION = booleanPreferencesKey("fraction_default")
+        val NOTATION = stringPreferencesKey("number_notation")
         val WORKSPACE = longPreferencesKey("workspace_id")
     }
 
@@ -76,6 +79,7 @@ class SettingsRepository(private val context: Context) {
             autoRecalc = this[Keys.AUTO_RECALC] ?: d.autoRecalc,
             groupDigits = this[Keys.GROUP] ?: d.groupDigits,
             fractionByDefault = this[Keys.FRACTION] ?: d.fractionByDefault,
+            numberNotation = this[Keys.NOTATION] ?: d.numberNotation,
             workspaceId = this[Keys.WORKSPACE] ?: d.workspaceId
         )
     }
@@ -101,6 +105,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.AUTO_RECALC] = s.autoRecalc
             prefs[Keys.GROUP] = s.groupDigits
             prefs[Keys.FRACTION] = s.fractionByDefault
+            prefs[Keys.NOTATION] = s.numberNotation
             prefs[Keys.WORKSPACE] = s.workspaceId
         }
     }

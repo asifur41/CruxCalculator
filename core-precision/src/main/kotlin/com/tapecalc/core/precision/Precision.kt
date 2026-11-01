@@ -47,6 +47,40 @@ object NumberFormatter {
         return rounded.toPlainString()
     }
 
+    /**
+     * Always-scientific notation with one digit before the point: 12345 -> "1.2345E4", 0.00012 -> "1.2E-4".
+     * Zero stays "0". The exponent is always written, even when it is 0 ("5E0").
+     */
+    fun formatScientific(value: BigDecimal, sigDigits: Int = Precision.DISPLAY_DIGITS): String {
+        if (value.signum() == 0) return "0"
+        val rounded = value.round(MathContext(sigDigits, RoundingMode.HALF_UP)).stripTrailingZeros()
+        val exp10 = rounded.precision() - rounded.scale() - 1
+        return composeExponential(rounded, exp10, intDigits = 1)
+    }
+
+    /**
+     * Engineering notation: the exponent is always a multiple of 3 and the mantissa is between 1 and 999.x,
+     * so 12345 -> "12.345E3", 0.00012 -> "120E-6", 100000 -> "100E3". Zero stays "0".
+     */
+    fun formatEngineering(value: BigDecimal, sigDigits: Int = Precision.DISPLAY_DIGITS): String {
+        if (value.signum() == 0) return "0"
+        val rounded = value.round(MathContext(sigDigits, RoundingMode.HALF_UP)).stripTrailingZeros()
+        val exp10 = rounded.precision() - rounded.scale() - 1
+        val shift = Math.floorMod(exp10, 3)
+        return composeExponential(rounded, exp10 - shift, intDigits = shift + 1)
+    }
+
+    /** Writes [rounded] as `<intDigits digits>[.<rest>]E<exponent>`, padding with zeros when it has too few digits. */
+    private fun composeExponential(rounded: BigDecimal, exponent: Int, intDigits: Int): String {
+        var digits = rounded.unscaledValue().abs().toString()
+        if (digits.length < intDigits) digits += "0".repeat(intDigits - digits.length)
+        val head = digits.substring(0, intDigits)
+        val tail = digits.substring(intDigits)
+        val mantissa = if (tail.isEmpty()) head else "$head.$tail"
+        val sign = if (rounded.signum() < 0) "-" else ""
+        return "$sign${mantissa}E$exponent"
+    }
+
     /** Inserts thousands separators into the integer part of a plain (non-scientific) number string. */
     fun group(text: String, separator: Char = ','): String {
         if (text.contains('E') || text.contains('(') || text.contains('/')) return text

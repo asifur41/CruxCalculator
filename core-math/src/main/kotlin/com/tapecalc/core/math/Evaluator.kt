@@ -28,7 +28,11 @@ internal class Evaluator(private val ctx: EvalContext) {
             "ans" -> return ctx.ans ?: throw CalcException(ErrorKind.UNKNOWN_NAME, "There is no previous answer yet", node.pos)
         }
         ctx.variables.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.let { return it.value }
-        throw CalcException(ErrorKind.UNKNOWN_NAME, "Unknown name '$name'", node.pos)
+        val known = ctx.variables.keys + Functions.suggestionNames()
+        val hint = Suggestions.closest(name, known)
+        throw CalcException(
+            CalcError(ErrorKind.UNKNOWN_NAME, Suggestions.withHint("Unknown name '$name'", hint), node.pos, hint)
+        )
     }
 
     private fun binary(node: BinaryNode): CalcValue {

@@ -17,6 +17,8 @@ Pay once. No ads forever. No subscription. No tracking. No account. Works fully 
 | Scientific | sin cos tan, inverse, hyperbolic, Deg/Rad/Grad (always visible), log / ln / log2 / log base N, powers, roots, factorial, mod, abs, pi e phi, nPr, nCr, exact fractions and repeating decimals |
 | Convert | 12 categories, ~100 units, offline. Inline: `12 km to mi`, `5 kg to lb`, `72 F to C` |
 | Variables | `rate = 0.18`, then `200 * rate`; variables panel |
+| Clear errors | Plain-language messages with "Did you mean ...?" hints for mistyped functions, variables and units (`sinn(30)`, `5 kg to pund`), and explanations for dangling operators and wrong argument counts |
+| Number notation | Settings > Calculation > Number notation: Auto, Scientific (`1.2345E4`) or Engineering (`12.345E3`); display only |
 | Look and feel | 12 themes, custom accent, key styles, button shapes, font size, left-handed layout, tablet / foldable two-pane layout, TalkBack labels, hardware keyboard support |
 
 Not in this version (by design): programmer mode, complex numbers, matrices, custom formulas, currency conversion, graphing, symbolic algebra.
@@ -154,6 +156,8 @@ Re-run the workflow after adding secrets; the log step "Report signing mode" tel
 * `0.1 + 0.2` is exactly `0.3` (also available as the fraction `3/10`).
 * Percent: `100 + 10%` = 110, `50%` = 0.5, `200 * 10%` = 20.
 * Implicit multiplication `2x`, `2(3+4)`, `2pi` works; `1/2x` is read as `1/(2x)` and shows a warning.
+* Error hints: `Suggestions.closest` (core-math) finds the nearest known function, constant, variable or unit spelling (edit distance, neighbouring-letter swaps count as one mistake; words under 3 letters get no hint). When two words are equally close the one listed first wins: the user's own variables first, then common functions.
+* Number notation is a display option (`NumberNotation`, `EvalResult.formatted`). Stored tape values, copying and exports always use the normal form.
 * The whole tape logic (edit, stale / updated tracking) is pure Kotlin in `core-data/.../domain` and unit tested without Android.
 * Tests: `core-precision`, `core-math`, `core-data` (history persistence, editing, export, Turbine flow test), `app` (keypad input rules), and an instrumented Compose UI test in `app/src/androidTest` (`./gradlew connectedDebugAndroidTest` on a device).
 

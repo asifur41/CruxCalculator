@@ -159,7 +159,22 @@ class Parser(private val tokens: List<Token>) {
             T.MINUS -> UnaryNode(true, parseExpression(UNARY_BP))
             T.PLUS -> UnaryNode(false, parseExpression(UNARY_BP))
             T.SQRT -> CallNode("sqrt", listOf(parseExpression(35)), t.pos)
-            T.EOF -> throw CalcException(ErrorKind.SYNTAX, "Unexpected end of expression", t.pos)
+            T.EOF -> {
+                // The expression stopped where a number was needed: say which operator is left hanging.
+                val prev = tokens.getOrNull(pos - 1)
+                val prevText = prev?.text.orEmpty()
+                val message = when (prev?.type) {
+                    T.PLUS, T.MINUS, T.STAR, T.SLASH, T.CARET -> "'$prevText' needs a number after it"
+                    T.COMMA -> "A value is missing after the comma"
+                    T.EQUALS -> "A value is missing after '='"
+                    T.LPAREN -> "Nothing inside the parentheses"
+                    else -> "Unexpected end of expression"
+                }
+                throw CalcException(ErrorKind.SYNTAX, message, t.pos)
+            }
+            T.STAR, T.SLASH, T.CARET, T.BANG, T.PERCENT, T.COMMA -> fail("'${t.text}' needs a number before it", t)
+            T.RPAREN -> fail("Nothing inside the parentheses", t)
+            T.EQUALS -> fail("Unexpected '='. Variables are set like: x = 5", t)
             else -> fail("Unexpected '${t.text}'", t)
         }
     }

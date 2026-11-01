@@ -17,6 +17,7 @@ import com.tapecalc.core.math.Calculator
 import com.tapecalc.core.math.EvalContext
 import com.tapecalc.core.math.EvalOutcome
 import com.tapecalc.core.math.EvalResult
+import com.tapecalc.core.math.NumberNotation
 import com.tapecalc.core.math.SmartPaste
 import com.tapecalc.core.precision.NumberFormatter
 import com.tapecalc.core.ui.KeyAction
@@ -131,6 +132,7 @@ class CalculatorViewModel @Inject constructor(
         ws: Workspace?
     ): DisplayState {
         val angle = AngleMode.fromName(s.angleMode)
+        val notation = NumberNotation.fromName(s.numberNotation)
         val base = DisplayState(angleLabel = angle.label, workspaceName = ws?.name ?: "")
         val committed = ui.committed
         if (committed != null) {
@@ -141,9 +143,9 @@ class CalculatorViewModel @Inject constructor(
             val secondary: String?
             if (showFraction) {
                 main = r.fraction.orEmpty() + unitSuffix
-                secondary = "≈ ${group(r.display, s.groupDigits)}$unitSuffix"
+                secondary = "≈ ${group(r.formatted(notation), s.groupDigits)}$unitSuffix"
             } else {
-                main = group(r.display, s.groupDigits) + unitSuffix
+                main = group(r.formatted(notation), s.groupDigits) + unitSuffix
                 secondary = r.fraction?.let { f ->
                     buildString {
                         append("= ").append(f)
@@ -174,7 +176,7 @@ class CalculatorViewModel @Inject constructor(
                 val unit = if (r.unit != null) " ${r.unit}" else ""
                 base.copy(
                     expression = text,
-                    preview = "= " + group(r.display, s.groupDigits) + unit,
+                    preview = "= " + group(r.formatted(notation), s.groupDigits) + unit,
                     warning = r.warnings.firstOrNull()
                 )
             }

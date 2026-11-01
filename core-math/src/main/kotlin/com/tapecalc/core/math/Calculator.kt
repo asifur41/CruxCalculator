@@ -50,9 +50,7 @@ object Calculator {
             val converted = UnitRegistry.convert(value, conversion.from, conversion.to)
             return buildResult(converted, conversion.to.symbol, warnings, null)
         }
-        if (HAS_TO_WORD.containsMatchIn(text)) {
-            throw CalcException(ErrorKind.UNKNOWN_UNIT, "Unknown unit in conversion. Example: 12 km to mi")
-        }
+        if (HAS_TO_WORD.containsMatchIn(text)) throw unknownUnitError(text)
 
         val (statement, warnings) = Parser.parse(Tokenizer.tokenize(text))
         val evaluator = Evaluator(ctx)
@@ -60,6 +58,27 @@ object Calculator {
             is Statement.Expr -> buildResult(evaluator.eval(statement.node), null, warnings, null)
             is Statement.Assign -> buildResult(evaluator.eval(statement.node), null, warnings, statement.name)
         }
+    }
+
+    private val LAST_TO = Regex("""^(.*\S)\s+to\s+(\S.*)$""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val TRAILING_WORD = Regex("""([\p{L}°µ/][\p{L}\p{N}°µ/()]*)\s*$""")
+
+    /** Names the unit that was not understood (and the closest known one) instead of a generic message. */
+    private fun unknownUnitError(text: String): CalcException {
+        val m = LAST_TO.find(text)
+        var bad: String? = null
+        if (m != null) {
+            val right = m.groupValues[2].trim()
+            bad = if (UnitRegistry.find(right) == null) right
+            else TRAILING_WORD.find(m.groupValues[1])?.groupValues?.get(1)
+        }
+        val hint = bad?.let { Suggestions.closest(it, UnitRegistry.aliasNames()) }
+        val message = when {
+            bad == null -> "Unknown unit in conversion. Example: 12 km to mi"
+            hint != null -> Suggestions.withHint("Unknown unit '$bad'", hint)
+            else -> "Unknown unit '$bad'. Example: 12 km to mi"
+        }
+        return CalcException(CalcError(ErrorKind.UNKNOWN_UNIT, message, null, hint))
     }
 
     private fun evalExpressionOnly(text: String, ctx: EvalContext): Pair<CalcValue, List<String>> {

@@ -16,12 +16,30 @@ enum class AngleMode(val label: String) {
     }
 }
 
+/** How the main result is written: normal, always scientific (1.2345E4) or engineering (12.345E3). */
+enum class NumberNotation(val label: String) {
+    AUTO("Auto"), SCIENTIFIC("Scientific"), ENGINEERING("Engineering");
+
+    companion object {
+        fun fromName(name: String?): NumberNotation = entries.firstOrNull { it.name == name } ?: AUTO
+    }
+}
+
 enum class ErrorKind {
     EMPTY, SYNTAX, UNBALANCED_PARENTHESES, DIVISION_BY_ZERO, DOMAIN, OVERFLOW, UNDERFLOW,
     UNKNOWN_NAME, UNKNOWN_UNIT, UNIT_MISMATCH, UNDEFINED, INVALID_ARGUMENT, TOO_COMPLEX
 }
 
-data class CalcError(val kind: ErrorKind, val message: String, val position: Int? = null)
+/**
+ * [suggestion] is the word the person probably meant (for example "sin" for "sinn"); it is already
+ * mentioned in [message], and is exposed separately so a screen can offer it as a one-tap fix later.
+ */
+data class CalcError(
+    val kind: ErrorKind,
+    val message: String,
+    val position: Int? = null,
+    val suggestion: String? = null
+)
 
 class CalcException(val error: CalcError) : RuntimeException(error.message) {
     constructor(kind: ErrorKind, message: String, position: Int? = null) : this(CalcError(kind, message, position))
@@ -123,6 +141,13 @@ data class EvalResult(
 ) {
     val displayWithUnit: String get() = if (unit != null) "$display $unit" else display
     val hasExactView: Boolean get() = fraction != null
+
+    /** The number (without unit) written in the chosen [notation]; AUTO is the same as [display]. */
+    fun formatted(notation: NumberNotation): String = when (notation) {
+        NumberNotation.AUTO -> display
+        NumberNotation.SCIENTIFIC -> NumberFormatter.formatScientific(value.decimal)
+        NumberNotation.ENGINEERING -> NumberFormatter.formatEngineering(value.decimal)
+    }
 }
 
 sealed interface EvalOutcome {

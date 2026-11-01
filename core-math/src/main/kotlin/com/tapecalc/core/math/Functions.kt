@@ -39,6 +39,9 @@ internal object Functions {
         return if (ARITY.containsKey(lower)) lower else null
     }
 
+    /** Names a mistyped word can be compared with: every function, alias and constant. */
+    fun suggestionNames(): Set<String> = ARITY.keys + ALIASES.keys + CONSTANTS
+
     fun isReserved(name: String): Boolean {
         val lower = name.lowercase()
         return canonicalName(name) != null || lower in CONSTANTS || lower in OTHER_RESERVED
@@ -86,9 +89,13 @@ internal object Functions {
     fun call(name: String, args: List<CalcValue>, ctx: EvalContext): CalcValue {
         val range = ARITY.getValue(name)
         if (args.size !in range) {
-            val expected = if (range.last == UNLIMITED) "at least ${range.first}"
-            else if (range.first == range.last) "${range.first}" else "${range.first}–${range.last}"
-            throw CalcException(ErrorKind.INVALID_ARGUMENT, "$name expects $expected argument(s)")
+            fun values(n: Int) = if (n == 1) "1 value" else "$n values"
+            val expected = when {
+                range.last == UNLIMITED -> "at least ${values(range.first)}"
+                range.first == range.last -> values(range.first)
+                else -> "${range.first} to ${range.last} values"
+            }
+            throw CalcException(ErrorKind.INVALID_ARGUMENT, "$name needs $expected but got ${args.size}")
         }
         val x = args[0]
         val mode = ctx.angleMode
