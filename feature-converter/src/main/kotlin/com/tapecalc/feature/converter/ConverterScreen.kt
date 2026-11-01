@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -40,13 +41,18 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tapecalc.core.math.BaseConversion
 import com.tapecalc.core.math.CalcException
 import com.tapecalc.core.math.Calculator
 import com.tapecalc.core.math.EvalOutcome
+import com.tapecalc.core.math.NumberBase
+import com.tapecalc.core.math.NumberBases
 import com.tapecalc.core.math.UnitCategory
 import com.tapecalc.core.math.UnitDef
 import com.tapecalc.core.math.UnitRegistry
@@ -75,8 +81,9 @@ private fun convert(input: String, from: UnitDef, to: UnitDef): Conversion {
 }
 
 /**
- * Offline unit converter. Works for 12 categories; the same conversions are available inline
- * in every calculator tab (for example `12 km to mi`).
+ * Offline converter. Works for 12 unit categories (the same conversions are available inline in
+ * every calculator tab, for example `12 km to mi`) plus a "Number system" mode for binary, octal,
+ * decimal, hexadecimal and other bases.
  */
 @Composable
 fun ConverterScreen(
@@ -84,13 +91,22 @@ fun ConverterScreen(
     modifier: Modifier = Modifier
 ) {
     val categories = UnitCategory.entries
+    // One extra chip after the unit categories selects the number-system mode.
+    val numberSystemIndex = categories.size
     var categoryIndex by rememberSaveable { mutableStateOf(0) }
+    val numberMode = categoryIndex == numberSystemIndex
     val category = categories[categoryIndex.coerceIn(0, categories.lastIndex)]
     val units = remember(category) { UnitRegistry.byCategory(category) }
 
     var fromId by rememberSaveable { mutableStateOf("") }
     var toId by rememberSaveable { mutableStateOf("") }
     var input by rememberSaveable { mutableStateOf("1") }
+
+    var baseInput by rememberSaveable { mutableStateOf("255") }
+    var baseFromRadix by rememberSaveable { mutableStateOf(NumberBases.DECIMAL.radix) }
+    var baseToRadix by rememberSaveable { mutableStateOf(NumberBases.HEXADECIMAL.radix) }
+    val baseFrom = NumberBases.all.firstOrNull { it.radix == baseFromRadix } ?: NumberBases.DECIMAL
+    val baseTo = NumberBases.all.firstOrNull { it.radix == baseToRadix } ?: NumberBases.HEXADECIMAL
 
     val from = units.firstOrNull { it.id == fromId } ?: units.first()
     val to = units.firstOrNull { it.id == toId } ?: units.getOrElse(1) { units.first() }
@@ -108,7 +124,7 @@ fun ConverterScreen(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories) { c ->
                 FilterChip(
-                    selected = c == category,
+                    selected = !numberMode && c == category,
                     onClick = {
                         categoryIndex = c.ordinal
                         fromId = ""
@@ -117,64 +133,89 @@ fun ConverterScreen(
                     label = { Text(c.title) }
                 )
             }
-        }
-
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it.take(60) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Value (you can type an expression such as 2*5)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-        )
-
-        UnitPicker("From", from, units) { fromId = it.id }
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            IconButton(onClick = {
-                val f = from.id
-                fromId = to.id
-                toId = f
-            }) {
-                Icon(Icons.Outlined.SwapVert, contentDescription = "Swap units")
+            item {
+                FilterChip(
+                    selected = numberMode,
+                    onClick = { categoryIndex = numberSystemIndex },
+                    label = { Text("Number system") }
+                )
             }
         }
 
-        UnitPicker("To", to, units) { toId = it.id }
+        if (numberMode) {
+            NumberSystemPane(
+                input = baseInput,
+                onInputChange = { baseInput = it },
+                from = baseFrom,
+                onFromChange = { baseFromRadix = it.radix },
+                to = baseTo,
+                onToChange = { baseToRadix = it.radix },
+                onSwap = {
+                    val f = baseFromRadix
+                    baseFromRadix = baseToRadix
+                    baseToRadix = f
+                },
+                onUseInCalculator = onUseInCalculator
+            )
+        } else {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it.take(60) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Value (you can type an expression such as 2*5)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
 
-        Card(
-            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                when (conversion) {
-                    is Conversion.Done -> {
-                        Text(conversion.text, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
-                        Text(conversion.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            UnitPicker("From", from, units) { fromId = it.id }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                IconButton(onClick = {
+                    val f = from.id
+                    fromId = to.id
+                    toId = f
+                }) {
+                    Icon(Icons.Outlined.SwapVert, contentDescription = "Swap units")
+                }
+            }
+
+            UnitPicker("To", to, units) { toId = it.id }
+
+            Card(
+                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    when (conversion) {
+                        is Conversion.Done -> {
+                            Text(conversion.text, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
+                            Text(conversion.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        is Conversion.Problem -> Text(conversion.message, color = MaterialTheme.colorScheme.error)
                     }
-                    is Conversion.Problem -> Text(conversion.message, color = MaterialTheme.colorScheme.error)
                 }
             }
-        }
 
-        if (conversion is Conversion.Done) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(conversion.text)) }) {
-                    Icon(Icons.Outlined.ContentCopy, contentDescription = null)
-                    Spacer(Modifier.padding(horizontal = 4.dp))
-                    Text("Copy")
-                }
-                Button(onClick = { onUseInCalculator("${input.trim().ifEmpty { "1" }} ${from.symbol} to ${to.symbol}") }) {
-                    Text("Use in calculator")
+            if (conversion is Conversion.Done) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { clipboard.setText(AnnotatedString(conversion.text)) }) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+                        Spacer(Modifier.padding(horizontal = 4.dp))
+                        Text("Copy")
+                    }
+                    Button(onClick = { onUseInCalculator("${input.trim().ifEmpty { "1" }} ${from.symbol} to ${to.symbol}") }) {
+                        Text("Use in calculator")
+                    }
                 }
             }
+
+            Text(
+                "Tip: type 12 km to mi, 5 kg to lb or 72 F to C directly into the calculator (keyboard icon).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
-        Text(
-            "Tip: type 12 km to mi, 5 kg to lb or 72 F to C directly into the calculator (keyboard icon).",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -198,6 +239,139 @@ private fun UnitPicker(label: String, selected: UnitDef, units: List<UnitDef>, o
                     onClick = {
                         expanded = false
                         onSelect(u)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Number-system converter: whole numbers between binary, octal, decimal, hexadecimal and other bases.
+ * All state is held by [ConverterScreen] so it survives switching between chips.
+ */
+@Composable
+private fun NumberSystemPane(
+    input: String,
+    onInputChange: (String) -> Unit,
+    from: NumberBase,
+    onFromChange: (NumberBase) -> Unit,
+    to: NumberBase,
+    onToChange: (NumberBase) -> Unit,
+    onSwap: () -> Unit,
+    onUseInCalculator: (String) -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    val conversion = remember(input, from, to) {
+        if (input.isBlank()) null else NumberBases.convert(input, from, to)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { onInputChange(it.take(60)) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Number in ${from.label} (digits ${NumberBases.digitHint(from)})") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                keyboardType = KeyboardType.Ascii
+            )
+        )
+
+        BasePicker("From", from, onFromChange)
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            IconButton(onClick = onSwap) {
+                Icon(Icons.Outlined.SwapVert, contentDescription = "Swap number systems")
+            }
+        }
+
+        BasePicker("To", to, onToChange)
+
+        Card(
+            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (conversion) {
+                    null -> Text(
+                        "Type a number to convert",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    is BaseConversion.Invalid -> Text(conversion.message, color = MaterialTheme.colorScheme.error)
+                    is BaseConversion.Ok -> {
+                        Text(
+                            conversion.text,
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            "${input.trim()} (base ${from.radix}) = ${conversion.text} (base ${to.radix})",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        NumberBases.common.forEach { base ->
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    base.tag,
+                                    modifier = Modifier.width(48.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    NumberBases.formatGrouped(conversion.value, base),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (conversion is BaseConversion.Ok) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(conversion.text)) }) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.padding(horizontal = 4.dp))
+                    Text("Copy")
+                }
+                // The calculator works in decimal, so it receives the value as a decimal number.
+                Button(onClick = { onUseInCalculator(conversion.value.toString()) }) {
+                    Text("Use in calculator")
+                }
+            }
+        }
+
+        Text(
+            "Whole numbers only. Spaces and prefixes such as 1111 1111, 0b1010 or 0xFF are accepted.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun BasePicker(label: String, selected: NumberBase, onSelect: (NumberBase) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+        ) {
+            Text(selected.label, modifier = Modifier.weight(1f))
+            Text("▾")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            NumberBases.all.forEach { base ->
+                DropdownMenuItem(
+                    text = { Text(base.label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(base)
                     }
                 )
             }
