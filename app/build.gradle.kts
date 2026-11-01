@@ -8,6 +8,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Release signing. The four values below come from environment variables (GitHub Secrets).
+// If any is missing or empty, the release build is simply left UNSIGNED instead of failing.
+// ---------------------------------------------------------------------------------------------
 val keystoreBase64: String? = System.getenv("KEYSTORE_BASE64")?.takeIf { it.isNotBlank() }
 val keystorePassword: String? = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
 val keyAliasName: String? = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
@@ -28,27 +32,14 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        // Permanent after the first Google Play upload. Decide now; it can never change later.
         applicationId = "com.cruxcalculator.app"
         minSdk = 26
         targetSdk = 36
+        // GitHub sets GITHUB_RUN_NUMBER, so every CI build gets a higher versionCode (Google Play requires this).
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "1.1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // Keep the app small and focused on modern devices only
-        ndk {
-            abiFilters += "arm64-v8a"
-        }
-    }
-
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a")
-            isUniversalApk = false
-        }
     }
 
     signingConfigs {
@@ -89,6 +80,7 @@ android {
     }
 
     lint {
+        // Lint must never block producing an APK/AAB; run `./gradlew lint` manually when you want the report.
         checkReleaseBuilds = false
         abortOnError = false
     }
