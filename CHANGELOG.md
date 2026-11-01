@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Fixed (debug update 1)
+* Slow start-up and the brief default-theme flash: the saved settings are now read instantly before the first
+  frame (small local copy, DataStore stays the source of truth) and the window is painted in the saved theme colour.
+* Smoothness: the key display, tape and editor now observe their own state, so a key press no longer recomposes the
+  whole app; handlers are remembered; only the first tab is built at start-up and the rest are prepared right after.
+* Tab changes now use an eased slide with a fade and slight scale; Settings slides over the calculator.
+* Tape: tapping an entry opens the editor (label, note, tags). The whole card is the touch target and shows an edit icon;
+  the tape jumps to the newest entry instead of a long animated scroll.
+* Paste: events are handled independently of snackbars (a pending message used to queue paste events that then fired
+  together), paste is limited to once per gesture, and the long-press paste no longer goes through the event channel.
+
+### Added (debug update 1)
+* Convert tab: all categories plus "Number system" are a static 5-column grid over 3 rows (no sideways scrolling).
+* One-time swipeable onboarding with a "Get Started" button; replay it from Settings.
+* Settings: Developer group (name, email, country, website) and Support group (community, latest APK, GitHub,
+  review, bug report, donate, replay tutorial, version). Links live in `AppInfo.kt`.
+
 ### Added
 * Number-system conversion in the Convert tab (new "Number system" chip): binary, ternary, quaternary, senary,
   octal, decimal, duodecimal, hexadecimal, base 32 and base 36. Whole numbers of any size, negative numbers,

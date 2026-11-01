@@ -6,11 +6,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -26,9 +33,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.unit.dp
 import com.tapecalc.core.data.settings.AppSettings
+import com.tapecalc.pro.AppInfo
 import com.tapecalc.core.math.AngleMode
 import com.tapecalc.core.math.NumberNotation
 import com.tapecalc.core.ui.ButtonShape
@@ -44,6 +53,7 @@ private val HAPTIC_LABELS = listOf("Off", "Light", "Medium", "Strong")
 fun SettingsScreen(
     settings: AppSettings,
     onChange: ((AppSettings) -> AppSettings) -> Unit,
+    onReplayTutorial: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -181,11 +191,32 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        SectionTitle("About")
+        GroupTitle("Developer")
+        InfoRow("Name", AppInfo.DEVELOPER_NAME)
+        InfoRow("Email", AppInfo.DEVELOPER_EMAIL, onClick = { sendEmail(context) })
+        InfoRow("Country", AppInfo.DEVELOPER_COUNTRY)
+        LinkRow("Visit Developer Website") { openLink(context, AppInfo.DEVELOPER_WEBSITE) }
+
+        GroupTitle("Support")
+        LinkRow("Join Community", "Chat with other users on WhatsApp") {
+            if (AppInfo.COMMUNITY_URL.isBlank()) {
+                Toast.makeText(context, "The community link is coming soon", Toast.LENGTH_SHORT).show()
+            } else {
+                openLink(context, AppInfo.COMMUNITY_URL)
+            }
+        }
+        LinkRow("Download the latest APK", "Direct download of the newest version") { openLink(context, AppInfo.LATEST_APK_URL) }
+        LinkRow("Visit GitHub releases", "Installed: $versionName. See what is new.") { openLink(context, AppInfo.GITHUB_URL) }
+        LinkRow("Leave a review", "Tell others what you think of the app") { openLink(context, AppInfo.REVIEW_URL) }
+        LinkRow("Report a Bug") { openLink(context, AppInfo.BUG_REPORT_URL) }
+        LinkRow("Donate") { openLink(context, AppInfo.DONATE_URL) }
+        LinkRow("Replay tutorial", onClick = onReplayTutorial)
+        InfoRow("Version", versionName)
         Text(
-            "CruxCalculator $versionName\nThe private, ad-free calculator for people who actually calculate.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            "Crux Calculator. The private, ad-free calculator for people who actually calculate.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 12.dp)
         )
         Spacer(Modifier.height(24.dp))
     }
@@ -220,5 +251,77 @@ private fun <T> ChipRow(items: List<T>, selectedKey: String, key: (T) -> String,
                 label = { Text(label(item)) }
             )
         }
+    }
+}
+
+private fun openLink(context: android.content.Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        Toast.makeText(context, "No app available to open this link", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun sendEmail(context: android.content.Context) {
+    val intent = Intent(Intent.ACTION_SENDTO).apply {
+        data = Uri.parse("mailto:")
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(AppInfo.DEVELOPER_EMAIL))
+        putExtra(Intent.EXTRA_SUBJECT, AppInfo.EMAIL_SUBJECT)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "No email app available", Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** Small upper-case group heading (DEVELOPER, SUPPORT). */
+@Composable
+private fun GroupTitle(text: String) {
+    Text(
+        text = text.uppercase(),
+        modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold
+    )
+}
+
+/** Label on the left, value on the right. Tappable when [onClick] is given. */
+@Composable
+private fun InfoRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "Open $label", onClick = onClick) else Modifier)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** Title (and optional subtitle) on the left, a chevron on the right. */
+@Composable
+private fun LinkRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     }
 }

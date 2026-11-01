@@ -1,6 +1,16 @@
 package com.tapecalc.feature.converter
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,8 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -121,26 +128,18 @@ fun ConverterScreen(
     ) {
         Text("Convert", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(categories) { c ->
-                FilterChip(
-                    selected = !numberMode && c == category,
-                    onClick = {
-                        categoryIndex = c.ordinal
-                        fromId = ""
-                        toId = ""
-                    },
-                    label = { Text(c.title) }
-                )
-            }
-            item {
-                FilterChip(
-                    selected = numberMode,
-                    onClick = { categoryIndex = numberSystemIndex },
-                    label = { Text("Number system") }
-                )
-            }
-        }
+        // A static grid (three rows) so every category is visible at once: no sideways scrolling.
+        CategoryGrid(
+            categories = categories,
+            numberMode = numberMode,
+            selected = category,
+            onSelectCategory = { c ->
+                categoryIndex = c.ordinal
+                fromId = ""
+                toId = ""
+            },
+            onSelectNumberSystem = { categoryIndex = numberSystemIndex }
+        )
 
         if (numberMode) {
             NumberSystemPane(
@@ -376,5 +375,94 @@ private fun BasePicker(label: String, selected: NumberBase, onSelect: (NumberBas
                 )
             }
         }
+    }
+}
+
+private const val GRID_COLUMNS = 5
+
+/** Short names so five tiles fit across a phone; the full name is what TalkBack reads. */
+private fun shortLabel(c: UnitCategory): String = when (c) {
+    UnitCategory.TEMPERATURE -> "Temp"
+    UnitCategory.FUEL -> "Fuel"
+    else -> c.title
+}
+
+/**
+ * All unit categories plus "Number system" as a fixed grid: 5 columns, so the 13 entries
+ * fill exactly 3 rows (5 + 5 + 3). Nothing scrolls sideways.
+ */
+@Composable
+private fun CategoryGrid(
+    categories: List<UnitCategory>,
+    numberMode: Boolean,
+    selected: UnitCategory,
+    onSelectCategory: (UnitCategory) -> Unit,
+    onSelectNumberSystem: () -> Unit
+) {
+    val total = categories.size + 1
+    val rows = (total + GRID_COLUMNS - 1) / GRID_COLUMNS
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (r in 0 until rows) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (col in 0 until GRID_COLUMNS) {
+                    val index = r * GRID_COLUMNS + col
+                    val tileModifier = Modifier.weight(1f)
+                    when {
+                        index < categories.size -> {
+                            val c = categories[index]
+                            CategoryTile(
+                                label = shortLabel(c),
+                                description = c.title,
+                                selected = !numberMode && c == selected,
+                                onClick = { onSelectCategory(c) },
+                                modifier = tileModifier
+                            )
+                        }
+                        index == categories.size -> CategoryTile(
+                            label = "Number system",
+                            description = "Number system",
+                            selected = numberMode,
+                            onClick = onSelectNumberSystem,
+                            modifier = tileModifier
+                        )
+                        else -> Spacer(tileModifier)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryTile(
+    label: String,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val container = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val content = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        modifier = modifier
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(container)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .semantics { contentDescription = description }
+            .padding(horizontal = 2.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            color = content,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            // The tile's own description (full category name) is what TalkBack reads.
+            modifier = Modifier.clearAndSetSemantics { }
+        )
     }
 }

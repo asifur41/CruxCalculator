@@ -1,5 +1,6 @@
 package com.tapecalc.feature.history
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
@@ -45,6 +47,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -124,8 +128,18 @@ fun TapePanel(
     val staleCount = entries.count { it.status == EntryStatus.STALE }
     val listState = rememberLazyListState()
 
+    // Jump straight to the newest entry when the tape opens (a long animated scroll used to swallow
+    // the first taps); animate only when a new calculation is added while the tape is on screen.
+    var didInitialScroll by remember { mutableStateOf(false) }
     LaunchedEffect(entries.size, query, pinnedOnly) {
-        if (query.isEmpty() && !pinnedOnly && filtered.isNotEmpty()) listState.animateScrollToItem(filtered.lastIndex)
+        if (query.isEmpty() && !pinnedOnly && filtered.isNotEmpty()) {
+            if (didInitialScroll) {
+                listState.animateScrollToItem(filtered.lastIndex)
+            } else {
+                listState.scrollToItem(filtered.lastIndex)
+                didInitialScroll = true
+            }
+        }
     }
 
     Column(modifier) {
@@ -237,16 +251,20 @@ fun TapePanel(
 @Composable
 private fun EntryRow(entry: HistoryEntry, groupDigits: Boolean, onClick: () -> Unit) {
     val colors = LocalCalcLook.current.colors
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
+    val shape = RoundedCornerShape(16.dp)
+    // The whole card is the touch target (clipped so the ripple follows the rounded corners).
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(role = Role.Button, onClickLabel = "Edit this calculation, add a label or note", onClick = onClick)
+            .semantics(mergeDescendants = true) {}
+            .padding(14.dp),
+        verticalAlignment = Alignment.Top
     ) {
         Column(
-            Modifier
-                .clickable(onClickLabel = "Edit this calculation", onClick = onClick)
-                .semantics(mergeDescendants = true) {}
-                .padding(14.dp),
+            Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             val label = entry.label
@@ -296,6 +314,12 @@ private fun EntryRow(entry: HistoryEntry, groupDigits: Boolean, onClick: () -> U
                 Text(entry.tags.joinToString("  ") { "#$it" }, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
             }
         }
+        Icon(
+            Icons.Outlined.Edit,
+            contentDescription = null,
+            tint = colors.muted,
+            modifier = Modifier.padding(start = 8.dp).size(20.dp)
+        )
     }
 }
 

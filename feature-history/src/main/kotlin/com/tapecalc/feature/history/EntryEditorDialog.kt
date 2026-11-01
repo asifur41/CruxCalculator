@@ -57,7 +57,14 @@ fun EntryEditorDialog(
     var note by remember(entry.id) { mutableStateOf(entry.note ?: "") }
     var tags by remember(entry.id) { mutableStateOf(entry.tags.joinToString(", ")) }
     var confirmDelete by remember(entry.id) { mutableStateOf(false) }
-    val livePreview = remember(expression) { preview(expression) }
+    // A problem while previewing must never stop the editor from opening.
+    val livePreview = remember(expression) {
+        try {
+            preview(expression)
+        } catch (e: Exception) {
+            EditPreview("", false)
+        }
+    }
     val colors = LocalCalcLook.current.colors
 
     AlertDialog(

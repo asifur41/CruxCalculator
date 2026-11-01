@@ -59,7 +59,6 @@ sealed interface UiEvent {
     data class Message(val text: String) : UiEvent
     data class CopyText(val text: String, val message: String) : UiEvent
     data class ExportReady(val text: String, val format: ExportFormat, val workspaceName: String) : UiEvent
-    data object RequestPaste : UiEvent
 }
 
 @HiltViewModel
@@ -68,8 +67,10 @@ class CalculatorViewModel @Inject constructor(
     private val settingsRepo: SettingsRepository
 ) : ViewModel() {
 
+    // Starts from the saved settings (read instantly), not from defaults, so the first frame already
+    // has the user's theme and there is no flash of the default one.
     val settings: StateFlow<AppSettings> =
-        settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+        settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepo.initialSettings())
 
     val workspaces: StateFlow<List<Workspace>> =
         repo.observeWorkspaces().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -90,6 +91,9 @@ class CalculatorViewModel @Inject constructor(
 
     private val _ui = MutableStateFlow(CalcUiState())
     val ui: StateFlow<CalcUiState> = _ui.asStateFlow()
+
+    /** One paste per gesture: swallows a second paste arriving within a fraction of a second. */
+    private val pasteGuard = ActionDebouncer(minGapMillis = 400)
 
     private val _events = Channel<UiEvent>(Channel.BUFFERED)
     val events: Flow<UiEvent> = _events.receiveAsFlow()
@@ -198,7 +202,7 @@ class CalculatorViewModel @Inject constructor(
             KeyAction.ToggleSign -> _ui.update { s ->
                 s.copy(expression = InputEditor.toggleSign(s.expression), committed = null, fractionOverride = null, error = null)
             }
-            KeyAction.Paste -> _events.trySend(UiEvent.RequestPaste)
+            KeyAction.Paste -> Unit // needs the clipboard, so the UI calls onPaste(text) directly
             KeyAction.Ans -> insertToken("ans")
             KeyAction.SmartParen -> insertToken("(")
             KeyAction.CycleAngle -> updateSettings { it.copy(angleMode = AngleMode.fromName(it.angleMode).next().name) }
@@ -231,21 +235,20 @@ class CalculatorViewModel @Inject constructor(
     }
 
     fun onPaste(clipboardText: String?) {
+        if (!pasteGuard.tryAcquire()) return
         val extracted = clipboardText?.let { SmartPaste.extract(it) }
         if (extracted == null) {
             _events.trySend(UiEvent.Message("Nothing to paste: no number or expression found on the clipboard."))
             return
         }
-        _ui.update { s ->
-            val after = s.committed != null
-            val base = if (after) "" else s.expression
-            s.copy(
-                expression = if (base.isEmpty()) extracted.take(InputEditor.MAX_LENGTH) else InputEditor.insert(base, extracted, false),
-                committed = null,
-                fractionOverride = null,
-                error = null
-            )
+        val s = _ui.value
+        val base = if (s.committed != null) "" else s.expression
+        val next = if (base.isEmpty()) extracted.take(InputEditor.MAX_LENGTH) else InputEditor.insert(base, extracted, false)
+        if (base.isNotEmpty() && next == base) {
+            _events.trySend(UiEvent.Message("That would make the expression too long."))
+            return
         }
+        _ui.value = s.copy(expression = next, committed = null, fractionOverride = null, error = null)
     }
 
     private fun calculate() {
@@ -421,4 +424,7 @@ class CalculatorViewModel @Inject constructor(
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { settingsRepo.update(transform) }
     }
+
+    /** Called when the first-run tutorial is finished or skipped. */
+    fun completeOnboarding() = updateSettings { it.copy(onboardingDone = true) }
 }
