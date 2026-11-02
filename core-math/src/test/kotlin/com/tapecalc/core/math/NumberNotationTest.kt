@@ -53,6 +53,6 @@ class NumberNotationTest {
 
     @Test
     fun everyNotationHasALabelForTheSettingsScreen() {
-        assertEquals(listOf("Auto", "Scientific", "Engineering"), NumberNotation.entries.map { it.label })
+        assertEquals(listOf("Auto", "Scientific", "Engineering", "Fix", "Norm 1", "Norm 2"), NumberNotation.entries.map { it.label })
     }
 }

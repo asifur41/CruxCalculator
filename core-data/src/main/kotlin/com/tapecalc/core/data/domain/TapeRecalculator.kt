@@ -30,7 +30,7 @@ object TapeRecalculator {
         variables: Map<String, CalcValue>,
         status: EntryStatus,
         now: Long
-    ): Pair<HistoryEntry, CalcValue?> {
+    ): Pair<HistoryEntry, Map<String, CalcValue>> {
         val ctx = EvalContext(base.angleMode, variables, ans)
         return when (val outcome = Calculator.evaluate(expression, ctx)) {
             is EvalOutcome.Success -> {
@@ -40,13 +40,13 @@ object TapeRecalculator {
                     resultText = r.display,
                     resultFull = r.full,
                     resultValue = r.value.serialize(),
-                    fraction = r.fraction,
+                    fraction = r.exactForm,
                     unit = r.unit,
                     isError = false,
                     errorMessage = null,
                     status = status,
                     updatedAt = now
-                ) to (if (r.assignedName != null) r.value else null)
+                ) to assignedValues(r)
             }
             is EvalOutcome.Failure -> base.copy(
                 expression = expression,
@@ -59,8 +59,15 @@ object TapeRecalculator {
                 errorMessage = outcome.error.message,
                 status = status,
                 updatedAt = now
-            ) to null
+            ) to emptyMap()
         }
+    }
+
+    /** Every variable the expression set: the main one, plus the rest of a colon chain or Pol/Rec. */
+    private fun assignedValues(r: com.tapecalc.core.math.EvalResult): Map<String, CalcValue> {
+        val out = LinkedHashMap<String, CalcValue>(r.assignments)
+        r.assignedName?.let { if (it !in out) out[it] = r.value }
+        return out
     }
 
     private fun resultChanged(before: HistoryEntry, after: HistoryEntry): Boolean =
@@ -87,14 +94,13 @@ object TapeRecalculator {
 
         val old = entries[index]
         val expression = newExpression.trim()
-        val (updated, assignedValue) = evaluated(old, expression, ansBefore(result, index), vars, EntryStatus.OK, now)
+        val (updated, assignedValues) = evaluated(old, expression, ansBefore(result, index), vars, EntryStatus.OK, now)
         result[index] = updated
         var ansDirty = resultChanged(old, updated) || old.expression != expression
-        val assigned = Calculator.analyze(expression).assignedName
-        if (assigned != null && assignedValue != null) {
-            vars[assigned] = assignedValue
-            changedVars[assigned] = assignedValue.serialize()
-            if (ansDirty) dirtyNames += assigned
+        for ((name, value) in assignedValues) {
+            vars[name] = value
+            changedVars[name] = value.serialize()
+            if (ansDirty) dirtyNames += name
         }
 
         for (j in index + 1 until result.size) {
@@ -106,11 +112,10 @@ object TapeRecalculator {
                 continue
             }
             if (autoRecalc) {
-                val (recomputed, value) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
+                val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
                 result[j] = recomputed
                 ansDirty = resultChanged(entry, recomputed)
-                val name = analysis.assignedName
-                if (name != null && value != null) {
+                for ((name, value) in values) {
                     vars[name] = value
                     changedVars[name] = value.serialize()
                     if (ansDirty) dirtyNames += name
@@ -118,7 +123,7 @@ object TapeRecalculator {
             } else {
                 result[j] = entry.copy(status = EntryStatus.STALE, updatedAt = now)
                 ansDirty = true
-                analysis.assignedName?.let { dirtyNames += it }
+                dirtyNames += analysis.assignedNames
             }
         }
         return Outcome(result, changedVars)
@@ -136,10 +141,9 @@ object TapeRecalculator {
         for (j in result.indices) {
             val entry = result[j]
             if (entry.status != EntryStatus.STALE) continue
-            val (recomputed, value) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
+            val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
             result[j] = recomputed
-            val name = Calculator.analyze(entry.expression).assignedName
-            if (name != null && value != null) {
+            for ((name, value) in values) {
                 vars[name] = value
                 changedVars[name] = value.serialize()
             }

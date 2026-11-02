@@ -98,6 +98,7 @@ class TapeRepository(
             val name = outcome.result.assignedName
                 ?: return EvalOutcome.Failure(CalcError(ErrorKind.SYNTAX, "Use the form name = value, for example rate = 0.18"))
             saveVariable(name, outcome.result.value)
+            outcome.result.assignments.forEach { (n, v) -> if (n != name) saveVariable(n, v) }
         }
         return outcome
     }
@@ -122,7 +123,7 @@ class TapeRepository(
                     resultText = r.display,
                     resultFull = r.full,
                     resultValue = r.value.serialize(),
-                    fraction = r.fraction,
+                    fraction = r.exactForm,
                     unit = r.unit,
                     angleMode = angleMode,
                     createdAt = now,
@@ -130,6 +131,8 @@ class TapeRepository(
                 )
                 val id = history.insert(draft.toEntity())
                 r.assignedName?.let { saveVariable(it, r.value) }
+                // Statements chained with ":" (and Pol/Rec, which set X and Y) can set several variables at once.
+                r.assignments.forEach { (name, value) -> if (name != r.assignedName) saveVariable(name, value) }
                 SubmitResult.Added(draft.copy(id = id), r)
             }
         }

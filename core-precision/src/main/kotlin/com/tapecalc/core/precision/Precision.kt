@@ -70,6 +70,30 @@ object NumberFormatter {
         return composeExponential(rounded, exp10 - shift, intDigits = shift + 1)
     }
 
+    /**
+     * Fixed decimal places (Casio "Fix"): rounds half up to [places] decimals and keeps the trailing zeros,
+     * so 3.5 with 2 places is "3.50". A result that rounds to zero is written without a minus sign.
+     */
+    fun formatFixed(value: BigDecimal, places: Int): String {
+        val p = places.coerceIn(0, 15)
+        val rounded = value.setScale(p, RoundingMode.HALF_UP)
+        if (rounded.signum() == 0) return BigDecimal.ZERO.setScale(p).toPlainString()
+        return rounded.toPlainString()
+    }
+
+    /**
+     * Casio "Norm 1" / "Norm 2": plain digits normally, scientific notation for very large or small values.
+     * Norm 1 switches below 1E-2 or from 1E10; Norm 2 switches below 1E-9 or from 1E10.
+     */
+    fun formatNorm(value: BigDecimal, mode: Int, sigDigits: Int = Precision.DISPLAY_DIGITS): String {
+        if (value.signum() == 0) return "0"
+        val rounded = value.round(MathContext(sigDigits, RoundingMode.HALF_UP)).stripTrailingZeros()
+        val exp10 = rounded.precision() - rounded.scale() - 1
+        val low = if (mode == 1) -2 else -9
+        if (exp10 >= 10 || exp10 < low) return formatScientific(value, sigDigits)
+        return rounded.toPlainString()
+    }
+
     /** Writes [rounded] as `<intDigits digits>[.<rest>]E<exponent>`, padding with zeros when it has too few digits. */
     private fun composeExponential(rounded: BigDecimal, exponent: Int, intDigits: Int): String {
         var digits = rounded.unscaledValue().abs().toString()

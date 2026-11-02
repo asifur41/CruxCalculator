@@ -164,6 +164,12 @@ fun SettingsScreen(
         ChipRow(NumberNotation.entries, settings.numberNotation, { it.name }, { it.label }) { v ->
             onChange { it.copy(numberNotation = v.name) }
         }
+        if (settings.numberNotation == NumberNotation.FIXED.name) {
+            Text("Fix: decimal places", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+            ChipRow((0..9).toList(), settings.fixDigits.toString(), { it.toString() }, { it.toString() }) { v ->
+                onChange { it.copy(fixDigits = v) }
+            }
+        }
         SwitchRow(
             title = "Update later results automatically",
             subtitle = "When you edit an earlier tape entry, entries that use ans or its variable are recalculated. If off, they are marked stale.",

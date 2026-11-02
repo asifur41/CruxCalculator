@@ -18,7 +18,13 @@ internal object Functions {
         "sqrt" to 1..1, "cbrt" to 1..1, "root" to 2..2,
         "abs" to 1..1, "floor" to 1..1, "ceil" to 1..1, "round" to 1..2, "sign" to 1..1,
         "fact" to 1..1, "mod" to 2..2, "npr" to 2..2, "ncr" to 2..2,
-        "min" to 1..UNLIMITED, "max" to 1..UNLIMITED, "pow" to 2..2
+        "min" to 1..UNLIMITED, "max" to 1..UNLIMITED, "pow" to 2..2,
+        "atan2" to 2..2, "hypot" to 2..2, "gcd" to 2..UNLIMITED, "lcm" to 2..UNLIMITED,
+        // Degrees-minutes-seconds pieces written by the tokenizer for 2°30'15" (not meant to be typed).
+        "_deg" to 1..1, "_min" to 1..1, "_sec" to 1..1,
+        // Forms that need their arguments unevaluated or return more than a number (handled by the evaluator).
+        "sum" to 4..4, "prod" to 4..4, "integral" to 4..4, "deriv" to 3..3, "solve" to 2..3,
+        "pol" to 2..2, "rec" to 2..2
     )
 
     private val ALIASES: Map<String, String> = mapOf(
@@ -27,8 +33,13 @@ internal object Functions {
         "artanh" to "atanh", "arctanh" to "atanh",
         "lg" to "log", "log10" to "log",
         "perm" to "npr", "comb" to "ncr", "choose" to "ncr",
-        "factorial" to "fact", "sgn" to "sign", "ceiling" to "ceil", "nthroot" to "root"
+        "factorial" to "fact", "sgn" to "sign", "ceiling" to "ceil", "nthroot" to "root",
+        "arctan2" to "atan2", "integrate" to "integral", "diff" to "deriv", "derivative" to "deriv",
+        "product" to "prod"
     )
+
+    /** Functions whose arguments are not all plain numbers; [Evaluator] handles them itself. */
+    val SPECIAL: Set<String> = setOf("sum", "prod", "integral", "deriv", "solve", "pol", "rec")
 
     private val CONSTANTS = setOf("pi", "e", "phi", "ans")
     private val OTHER_RESERVED = setOf("to", "in", "mod")
@@ -40,7 +51,8 @@ internal object Functions {
     }
 
     /** Names a mistyped word can be compared with: every function, alias and constant. */
-    fun suggestionNames(): Set<String> = ARITY.keys + ALIASES.keys + CONSTANTS
+    fun suggestionNames(): Set<String> =
+        (ARITY.keys + ALIASES.keys).filter { !it.startsWith("_") }.toSet() + CONSTANTS + Constants.names()
 
     fun isReserved(name: String): Boolean {
         val lower = name.lowercase()
@@ -86,17 +98,28 @@ internal object Functions {
         return Arith.div(ln(x), ln(base))
     }
 
-    fun call(name: String, args: List<CalcValue>, ctx: EvalContext): CalcValue {
+    /** Throws "sin needs 1 value but got 0" style errors when [count] arguments do not fit [name]. */
+    fun checkArity(name: String, count: Int) {
         val range = ARITY.getValue(name)
-        if (args.size !in range) {
+        if (count !in range) {
             fun values(n: Int) = if (n == 1) "1 value" else "$n values"
             val expected = when {
                 range.last == UNLIMITED -> "at least ${values(range.first)}"
                 range.first == range.last -> values(range.first)
                 else -> "${range.first} to ${range.last} values"
             }
-            throw CalcException(ErrorKind.INVALID_ARGUMENT, "$name needs $expected but got ${args.size}")
+            throw CalcException(ErrorKind.INVALID_ARGUMENT, "$name needs $expected but got $count")
         }
+    }
+
+    private fun integerArg(v: CalcValue, what: String): BigInteger {
+        val x = v.exact
+        if (x == null || !x.isInteger) domain("$what needs whole numbers")
+        return x.num
+    }
+
+    fun call(name: String, args: List<CalcValue>, ctx: EvalContext): CalcValue {
+        checkArity(name, args.size)
         val x = args[0]
         val mode = ctx.angleMode
         return when (name) {
@@ -131,6 +154,15 @@ internal object Functions {
             "min" -> args.reduce { a, b -> if (Arith.compare(b, a) < 0) b else a }
             "max" -> args.reduce { a, b -> if (Arith.compare(b, a) > 0) b else a }
             "pow" -> Arith.pow(x, args[1])
+            "atan2" -> Trig.atan2(x, args[1], mode)
+            "hypot" -> Arith.sqrt(Arith.add(Arith.mul(x, x), Arith.mul(args[1], args[1])))
+            "gcd" -> CalcValue.ofInteger(args.map { integerArg(it, "gcd") }.reduce { a, b -> a.gcd(b) })
+            "lcm" -> CalcValue.ofInteger(args.map { integerArg(it, "lcm") }.reduce { a, b ->
+                if (a.signum() == 0 || b.signum() == 0) BigInteger.ZERO else a.multiply(b).abs().divide(a.gcd(b))
+            })
+            "_deg" -> Trig.fromDegrees(x, mode)
+            "_min" -> Trig.fromDegrees(Arith.div(x, CalcValue.ofLong(60)), mode)
+            "_sec" -> Trig.fromDegrees(Arith.div(x, CalcValue.ofLong(3600)), mode)
             else -> throw CalcException(ErrorKind.UNKNOWN_NAME, "Unknown function '$name'")
         }
     }
