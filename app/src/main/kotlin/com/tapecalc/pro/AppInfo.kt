@@ -11,13 +11,13 @@ object AppInfo {
     const val DEVELOPER_WEBSITE = "https://asifur.pages.dev"
 
     /** WhatsApp community invite link. Leave empty until it exists. */
-    const val COMMUNITY_URL = ""
+    const val COMMUNITY_URL = "https://chat.whatsapp.com/J7Q6yQB1wqXAxMSbxDk6Cd"
 
     /** Newest release page of the GitHub repository (the latest APK is attached to it). */
-    const val LATEST_APK_URL = "https://github.com/asifur41/CruxCalculator/releases/latest"
+    const val LATEST_APK_URL = "https://github.com/asifur41/CruxCalculator/releases/latest/download/cruxcalculator.apk"
 
     /** The GitHub repository page. */
-    const val GITHUB_URL = "https://github.com/asifur41/CruxCalculator"
+    const val GITHUB_URL = "https://github.com/asifur41/CruxCalculator/releases/"
 
     const val REVIEW_URL = "https://asifur.pages.dev/CruxCalculator"
     const val BUG_REPORT_URL = "https://asifur.pages.dev/CruxCalculator"
