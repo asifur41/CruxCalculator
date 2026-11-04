@@ -31,5 +31,6 @@ include(
     ":feature-basic",
     ":feature-scientific",
     ":feature-converter",
+    ":feature-tools",
     ":feature-history"
 )

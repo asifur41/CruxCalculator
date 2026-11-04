@@ -104,6 +104,7 @@ dependencies {
     implementation(project(":feature-basic"))
     implementation(project(":feature-scientific"))
     implementation(project(":feature-converter"))
+    implementation(project(":feature-tools"))
     implementation(project(":feature-history"))
 
     implementation(libs.androidx.core.ktx)

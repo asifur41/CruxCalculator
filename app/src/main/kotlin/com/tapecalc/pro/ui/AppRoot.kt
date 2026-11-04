@@ -30,6 +30,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material.icons.outlined.Functions
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.SwapHoriz
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tapecalc.core.data.domain.ExportFormat
 import com.tapecalc.core.data.settings.AppSettings
+import com.tapecalc.core.math.AngleMode
 import com.tapecalc.core.ui.KeyAction
 import com.tapecalc.feature.basic.BasicScreen
 import com.tapecalc.feature.basic.DisplayActions
@@ -81,6 +83,7 @@ import com.tapecalc.feature.history.HistoryActions
 import com.tapecalc.feature.history.HistoryHub
 import com.tapecalc.feature.history.HistorySection
 import com.tapecalc.feature.scientific.ScientificScreen
+import com.tapecalc.feature.tools.ToolsScreen
 import com.tapecalc.pro.presentation.CalculatorViewModel
 import com.tapecalc.pro.presentation.UiEvent
 import kotlin.math.abs
@@ -92,11 +95,12 @@ private enum class Tab(val title: String, val icon: ImageVector) {
     BASIC("Basic", Icons.Outlined.Calculate),
     SCIENTIFIC("Scientific", Icons.Outlined.Science),
     CONVERT("Convert", Icons.Outlined.SwapHoriz),
+    TOOLS("Tools", Icons.Outlined.Functions),
     TAPE("Tape", Icons.Outlined.History)
 }
 
 private enum class SidePane(val title: String) {
-    TAPE("Tape"), VARIABLES("Variables"), NOTES("Notes"), CONVERT("Convert"), SETTINGS("Settings")
+    TAPE("Tape"), VARIABLES("Variables"), NOTES("Notes"), CONVERT("Convert"), TOOLS("Tools"), SETTINGS("Settings")
 }
 
 private class PendingExport(val text: String, val format: ExportFormat, val workspaceName: String)
@@ -423,6 +427,11 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                                         onUseInCalculator = { viewModel.submitText(it) },
                                         modifier = Modifier.weight(1f)
                                     )
+                                    SidePane.TOOLS -> ToolsScreen(
+                                        angleMode = AngleMode.fromName(settings.angleMode),
+                                        onUseInCalculator = { viewModel.submitText(it) },
+                                        modifier = Modifier.weight(1f)
+                                    )
                                     SidePane.SETTINGS -> SettingsScreen(
                                         settings = settings,
                                         onChange = onChangeSettings,
@@ -482,6 +491,10 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                                         Tab.BASIC -> BasicTab(viewModel, phoneActions, settings.leftHanded)
                                         Tab.SCIENTIFIC -> ScientificTab(viewModel, phoneActions, settings.leftHanded)
                                         Tab.CONVERT -> ConverterScreen(onUseInCalculator = useInCalculator)
+                                        Tab.TOOLS -> ToolsScreen(
+                                            angleMode = AngleMode.fromName(settings.angleMode),
+                                            onUseInCalculator = useInCalculator
+                                        )
                                         Tab.TAPE -> HistoryTab(
                                             viewModel, historySection, { historySection = it }, settings.groupDigits, historyActions
                                         )

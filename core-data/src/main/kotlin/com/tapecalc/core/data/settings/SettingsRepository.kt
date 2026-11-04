@@ -41,6 +41,8 @@ data class AppSettings(
     val fractionByDefault: Boolean = false,
     /** AUTO, SCIENTIFIC or ENGINEERING (see NumberNotation in core-math). Display only. */
     val numberNotation: String = "AUTO",
+    /** Decimal places used by the Fix notation (0 to 9). */
+    val fixDigits: Int = 2,
     val workspaceId: Long = 0,
     /** True once the first-run tutorial has been finished or skipped. */
     val onboardingDone: Boolean = false
@@ -65,6 +67,7 @@ class SettingsRepository(private val context: Context) {
         val GROUP = booleanPreferencesKey("group_digits")
         val FRACTION = booleanPreferencesKey("fraction_default")
         val NOTATION = stringPreferencesKey("number_notation")
+        val FIX_DIGITS = intPreferencesKey("fix_digits")
         val WORKSPACE = longPreferencesKey("workspace_id")
         val ONBOARDING = booleanPreferencesKey("onboarding_done")
     }
@@ -86,6 +89,7 @@ class SettingsRepository(private val context: Context) {
             groupDigits = this[Keys.GROUP] ?: d.groupDigits,
             fractionByDefault = this[Keys.FRACTION] ?: d.fractionByDefault,
             numberNotation = this[Keys.NOTATION] ?: d.numberNotation,
+            fixDigits = (this[Keys.FIX_DIGITS] ?: d.fixDigits).coerceIn(0, 9),
             workspaceId = this[Keys.WORKSPACE] ?: d.workspaceId,
             onboardingDone = this[Keys.ONBOARDING] ?: d.onboardingDone
         )
@@ -124,6 +128,7 @@ class SettingsRepository(private val context: Context) {
                 putBoolean("group", s.groupDigits)
                 putBoolean("fraction", s.fractionByDefault)
                 putString("notation", s.numberNotation)
+                putInt("fix_digits", s.fixDigits)
                 putLong("workspace", s.workspaceId)
                 putBoolean("onboarding", s.onboardingDone)
             }.apply()
@@ -152,6 +157,7 @@ class SettingsRepository(private val context: Context) {
                 groupDigits = p.getBoolean("group", d.groupDigits),
                 fractionByDefault = p.getBoolean("fraction", d.fractionByDefault),
                 numberNotation = p.getString("notation", null) ?: d.numberNotation,
+                fixDigits = p.getInt("fix_digits", d.fixDigits).coerceIn(0, 9),
                 workspaceId = p.getLong("workspace", d.workspaceId),
                 onboardingDone = p.getBoolean("onboarding", d.onboardingDone)
             )
@@ -191,6 +197,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.GROUP] = s.groupDigits
             prefs[Keys.FRACTION] = s.fractionByDefault
             prefs[Keys.NOTATION] = s.numberNotation
+            prefs[Keys.FIX_DIGITS] = s.fixDigits.coerceIn(0, 9)
             prefs[Keys.WORKSPACE] = s.workspaceId
             prefs[Keys.ONBOARDING] = s.onboardingDone
         }

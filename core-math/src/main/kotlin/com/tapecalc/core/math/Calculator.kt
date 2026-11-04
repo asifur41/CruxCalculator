@@ -42,7 +42,33 @@ object Calculator {
         val text = input.trim()
         if (text.isEmpty()) throw CalcException(ErrorKind.EMPTY, "Nothing to calculate")
         if (text.length > MAX_INPUT_LENGTH) throw CalcException(ErrorKind.TOO_COMPLEX, "Expression is too long")
+        if (text.indexOf(':') >= 0) return evaluateChain(text, ctx)
+        return evaluateSingle(text, ctx)
+    }
 
+    /** `A = 5 : B = A * 2 : A + B` runs the parts in order; each sees the variables set before it and `ans`. */
+    private fun evaluateChain(text: String, ctx: EvalContext): EvalResult {
+        val parts = text.split(':').map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.isEmpty()) throw CalcException(ErrorKind.EMPTY, "Nothing to calculate")
+        val vars = LinkedHashMap(ctx.variables)
+        val assigned = LinkedHashMap<String, CalcValue>()
+        val warnings = ArrayList<String>()
+        var ans = ctx.ans
+        var last: EvalResult? = null
+        for (part in parts) {
+            val r = evaluateSingle(part, EvalContext(ctx.angleMode, vars, ans))
+            for ((k, v) in r.assignments) {
+                vars[k] = v
+                assigned[k] = v
+            }
+            ans = r.value
+            warnings.addAll(r.warnings)
+            last = r
+        }
+        return last!!.copy(assignments = assigned, warnings = warnings.distinct())
+    }
+
+    private fun evaluateSingle(text: String, ctx: EvalContext): EvalResult {
         val conversion = splitConversion(text)
         if (conversion != null) {
             val (value, warnings) = if (conversion.expression.isBlank()) CalcValue.ONE to emptyList()
@@ -55,8 +81,8 @@ object Calculator {
         val (statement, warnings) = Parser.parse(Tokenizer.tokenize(text))
         val evaluator = Evaluator(ctx)
         return when (statement) {
-            is Statement.Expr -> buildResult(evaluator.eval(statement.node), null, warnings, null)
-            is Statement.Assign -> buildResult(evaluator.eval(statement.node), null, warnings, statement.name)
+            is Statement.Expr -> buildResult(evaluator.eval(statement.node), null, warnings, null, evaluator)
+            is Statement.Assign -> buildResult(evaluator.eval(statement.node), null, warnings, statement.name, evaluator)
         }
     }
 
@@ -100,12 +126,20 @@ object Calculator {
         return null
     }
 
-    private fun buildResult(value: CalcValue, unit: String?, warnings: List<String>, assigned: String?): EvalResult {
+    private fun buildResult(
+        value: CalcValue,
+        unit: String?,
+        warnings: List<String>,
+        assigned: String?,
+        evaluator: Evaluator? = null
+    ): EvalResult {
         val exact = value.exact
         val display = NumberFormatter.format(value.decimal, Precision.DISPLAY_DIGITS)
         val full = if (exact != null && exact.isInteger && exact.num.abs().toString().length <= 60) exact.num.toString()
         else NumberFormatter.format(value.decimal, Precision.FULL_DIGITS)
-        val showFraction = exact != null && !exact.isInteger && exact.bitSize <= 160
+        // A terminating decimal only gets a fraction view when it is a simple one (0.75 -> 3/4, not 132521403/10^41).
+        val showFraction = exact != null && !exact.isInteger && exact.bitSize <= 160 &&
+            (!exact.isTerminating() || exact.den.bitLength() <= 24)
         val repeating = if (exact != null && !exact.isInteger && !exact.isTerminating() && exact.den.bitLength() <= 128)
             exact.toRepeatingDecimal(60) else null
         return EvalResult(
@@ -117,13 +151,39 @@ object Calculator {
             repeating = repeating,
             unit = unit,
             warnings = warnings,
-            assignedName = assigned
+            assignedName = assigned,
+            assignments = LinkedHashMap<String, CalcValue>().also { m ->
+                evaluator?.assignments?.let { m.putAll(it) }
+                if (assigned != null) m[assigned] = value
+            },
+            extras = evaluator?.extras?.toList().orEmpty(),
+            dms = if (unit == null) Dms.format(value) else null,
+            piForm = if (unit == null) ExactForms.piForm(value) else null,
+            radicalForm = if (unit == null) ExactForms.radicalForm(value) else null
         )
     }
 
     /** Static facts about an expression: does it use `ans`, which variables, what does it assign. */
     fun analyze(input: String): Analysis {
         val text = input.trim()
+        if (text.indexOf(':') < 0) return analyzeOne(text)
+        // A chain: names set earlier in the chain are not outside dependencies; the last part decides what is assigned.
+        var usesAns = false
+        val names = linkedSetOf<String>()
+        val set = HashSet<String>()
+        var assigned: String? = null
+        for (part in text.split(':').map { it.trim() }.filter { it.isNotEmpty() }) {
+            val a = analyzeOne(part)
+            if (!a.isValid) return Analysis(false, false, emptySet(), null)
+            usesAns = usesAns || a.usesAns
+            names.addAll(a.referencedNames.filter { it !in set })
+            assigned = a.assignedName
+            a.assignedName?.let { set.add(it) }
+        }
+        return Analysis(true, usesAns, names, assigned, set)
+    }
+
+    private fun analyzeOne(text: String): Analysis {
         return try {
             val conversion = splitConversion(text)
             val body = conversion?.expression ?: text

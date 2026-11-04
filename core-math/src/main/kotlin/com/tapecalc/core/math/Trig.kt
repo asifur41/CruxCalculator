@@ -91,6 +91,29 @@ internal object Trig {
         AngleMode.GRAD -> CalcValue.ofDecimal(rad.multiply(BigDecimal(200), WORK).divide(BigMath.pi, WORK).round(CLEAN))
     }
 
+    /** [deg] degrees written in the current angle unit (exact for degrees and gradians). */
+    fun fromDegrees(deg: CalcValue, mode: AngleMode): CalcValue = when (mode) {
+        AngleMode.DEG -> deg
+        AngleMode.GRAD -> Arith.mul(deg, CalcValue.ofRational(Rational.of(10, 9)))
+        AngleMode.RAD -> CalcValue.ofDecimal(deg.decimal.multiply(BigMath.pi, WORK).divide(BigDecimal(180), WORK))
+    }
+
+    /** Angle of the point (x, y) measured from the positive x axis, in the current unit; exact on the axes. */
+    fun atan2(y: CalcValue, x: CalcValue, mode: AngleMode): CalcValue {
+        if (x.isZero && y.isZero) throw CalcException(ErrorKind.UNDEFINED, "The angle of the point (0, 0) is undefined")
+        fun deg(v: Long) = fromDegrees(CalcValue.ofLong(v), mode)
+        if (y.isZero) return if (x.signum > 0) CalcValue.ZERO else deg(180)
+        if (x.isZero) return if (y.signum > 0) deg(90) else deg(-90)
+        val base = BigMath.atan(y.decimal.abs().divide(x.decimal.abs(), WORK))
+        val rad = when {
+            x.signum > 0 && y.signum > 0 -> base
+            x.signum > 0 -> base.negate()
+            y.signum > 0 -> BigMath.pi.subtract(base, WORK)
+            else -> base.subtract(BigMath.pi, WORK)
+        }
+        return fromRadians(rad, mode)
+    }
+
     fun asin(x: BigDecimal, mode: AngleMode): CalcValue = fromRadians(BigMath.asin(x), mode)
     fun acos(x: BigDecimal, mode: AngleMode): CalcValue = fromRadians(BigMath.acos(x), mode)
     fun atan(x: BigDecimal, mode: AngleMode): CalcValue = fromRadians(BigMath.atan(x), mode)

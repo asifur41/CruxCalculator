@@ -14,6 +14,9 @@ class PercentNode(val operand: Node) : Node()
 class CallNode(val name: String, val args: List<Node>, val pos: Int) : Node()
 class ParenNode(val inner: Node) : Node()
 
+/** An already calculated value; used by the step-by-step solver, never produced by the parser. */
+class ValNode(val value: CalcValue) : Node()
+
 sealed class Statement {
     class Expr(val node: Node) : Statement()
     class Assign(val name: String, val node: Node) : Statement()
@@ -108,10 +111,14 @@ class Parser(private val tokens: List<Token>) {
             var left = parsePrefix()
             while (true) {
                 val t = peek()
-                if (t.type == T.BANG || t.type == T.PERCENT) {
+                if (t.type == T.BANG || t.type == T.PERCENT || t.type == T.DEGREE) {
                     if (POSTFIX_BP < minBp) break
                     advance()
-                    left = if (t.type == T.BANG) FactorialNode(left) else PercentNode(left)
+                    left = when (t.type) {
+                        T.BANG -> FactorialNode(left)
+                        T.PERCENT -> PercentNode(left)
+                        else -> CallNode("_deg", listOf(left), t.pos)
+                    }
                     continue
                 }
                 val infix = infixFor(t)
@@ -172,7 +179,7 @@ class Parser(private val tokens: List<Token>) {
                 }
                 throw CalcException(ErrorKind.SYNTAX, message, t.pos)
             }
-            T.STAR, T.SLASH, T.CARET, T.BANG, T.PERCENT, T.COMMA -> fail("'${t.text}' needs a number before it", t)
+            T.STAR, T.SLASH, T.CARET, T.BANG, T.PERCENT, T.DEGREE, T.COMMA -> fail("'${t.text}' needs a number before it", t)
             T.RPAREN -> fail("Nothing inside the parentheses", t)
             T.EQUALS -> fail("Unexpected '='. Variables are set like: x = 5", t)
             else -> fail("Unexpected '${t.text}'", t)

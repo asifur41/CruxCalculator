@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added (update 3)
+* **Calculator language**: Fix / Norm 1 / Norm 2 number formats (Settings, with 0-9 decimal places for Fix); colon
+  statements (`A=5 : B=A*2 : B+1`); degrees-minutes-seconds input (`2°30'15"`, `45°`) and DMS read-out; `Pol(x,y)` and
+  `Rec(r,θ)` (sets X, Y); 25 physical constants (`c0`, `hP`, `NA`, `kB`...); results shown as multiples of π (`2π/3`) and
+  simple radicals (`3√2`); `atan2`, `hypot`, `gcd`, `lcm`; `sum(f,k,a,b)`, `prod(...)`, `integral(f,x,a,b)`,
+  `deriv(f,x,a)`, `solve(f,x,guess)`.
+* **Tools tab** (new): polynomial roots to degree 4, simultaneous equations (up to 4 unknowns), SOLVE, calculus, symbolic
+  algebra (simplify / expand / factor / derivative / integral), one- and two-variable statistics with 7 regression types and
+  predictions, normal / binomial / Poisson distributions, BASE-N logic with 8/16/32/64-bit two's complement, matrices,
+  eigenvalues, vectors, complex numbers, step-by-step solutions, graphing (3 functions, pan / zoom / trace / zeros / peaks /
+  intersections), constants table, and an offline QR-code maker.
+* Statements that set several variables now save all of them to Variables and recalculate correctly on the tape.
+
+### Not included in update 3
+* Memory keys (M+, M-, MR, MC) and SHIFT/ALPHA keys on the keypad: use variables (`M = ans`, then `M + 5`) instead.
+* Tools results are not saved to the tape (use the "Use" button for single numbers).
+
 ### Fixed (debug update 1)
 * Slow start-up and the brief default-theme flash: the saved settings are now read instantly before the first
   frame (small local copy, DataStore stays the source of truth) and the window is painted in the saved theme colour.

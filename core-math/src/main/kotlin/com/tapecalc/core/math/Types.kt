@@ -16,9 +16,13 @@ enum class AngleMode(val label: String) {
     }
 }
 
-/** How the main result is written: normal, always scientific (1.2345E4) or engineering (12.345E3). */
+/**
+ * How the main result is written: normal, always scientific (1.2345E4), engineering (12.345E3),
+ * a fixed number of decimals (Fix) or Casio's Norm 1 / Norm 2 switch points.
+ */
 enum class NumberNotation(val label: String) {
-    AUTO("Auto"), SCIENTIFIC("Scientific"), ENGINEERING("Engineering");
+    AUTO("Auto"), SCIENTIFIC("Scientific"), ENGINEERING("Engineering"),
+    FIXED("Fix"), NORM1("Norm 1"), NORM2("Norm 2");
 
     companion object {
         fun fromName(name: String?): NumberNotation = entries.firstOrNull { it.name == name } ?: AUTO
@@ -137,16 +141,35 @@ data class EvalResult(
     val repeating: String?,
     val unit: String?,
     val warnings: List<String>,
-    val assignedName: String?
+    val assignedName: String?,
+    /** Every variable this input set (colon chains `A=5 : B=A+1`, and Pol/Rec which set X and Y). */
+    val assignments: Map<String, CalcValue> = emptyMap(),
+    /** Extra named outputs, e.g. the angle θ of `Pol(3, 4)`. */
+    val extras: List<Pair<String, CalcValue>> = emptyList(),
+    /** Degrees-minutes-seconds reading of the value, e.g. "2°30′0″" (null for huge numbers). */
+    val dms: String? = null,
+    /** The value as a multiple of π, e.g. "2π/3", when it is one. */
+    val piForm: String? = null,
+    /** The value as a simplified root, e.g. "√2/2" or "3√5", when it is one. */
+    val radicalForm: String? = null
 ) {
-    val displayWithUnit: String get() = if (unit != null) "$display $unit" else display
-    val hasExactView: Boolean get() = fraction != null
+    /** The exact form shown by the S⇔D toggle: a fraction, else a root, else a multiple of π. */
+    val exactForm: String? get() = fraction ?: radicalForm ?: piForm
 
-    /** The number (without unit) written in the chosen [notation]; AUTO is the same as [display]. */
-    fun formatted(notation: NumberNotation): String = when (notation) {
+    val displayWithUnit: String get() = if (unit != null) "$display $unit" else display
+    val hasExactView: Boolean get() = exactForm != null
+
+    /**
+     * The number (without unit) written in the chosen [notation]; AUTO is the same as [display].
+     * [fixDigits] is the number of decimals used by [NumberNotation.FIXED].
+     */
+    fun formatted(notation: NumberNotation, fixDigits: Int = 2): String = when (notation) {
         NumberNotation.AUTO -> display
         NumberNotation.SCIENTIFIC -> NumberFormatter.formatScientific(value.decimal)
         NumberNotation.ENGINEERING -> NumberFormatter.formatEngineering(value.decimal)
+        NumberNotation.FIXED -> NumberFormatter.formatFixed(value.decimal, fixDigits)
+        NumberNotation.NORM1 -> NumberFormatter.formatNorm(value.decimal, 1)
+        NumberNotation.NORM2 -> NumberFormatter.formatNorm(value.decimal, 2)
     }
 }
 
@@ -160,5 +183,7 @@ data class Analysis(
     val isValid: Boolean,
     val usesAns: Boolean,
     val referencedNames: Set<String>,
-    val assignedName: String?
+    val assignedName: String?,
+    /** Every name the input assigns (a colon chain can assign several). */
+    val assignedNames: Set<String> = assignedName?.let { setOf(it) } ?: emptySet()
 )

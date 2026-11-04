@@ -141,16 +141,18 @@ class CalculatorViewModel @Inject constructor(
         val committed = ui.committed
         if (committed != null) {
             val r = committed.result
-            val showFraction = (ui.fractionOverride ?: s.fractionByDefault) && r.fraction != null
+            val exact = r.exactForm
+            val showFraction = (ui.fractionOverride ?: s.fractionByDefault) && exact != null
             val unitSuffix = if (r.unit != null) " ${r.unit}" else ""
+            val decimal = group(r.formatted(notation, s.fixDigits), s.groupDigits)
             val main: String
-            val secondary: String?
+            var secondary: String?
             if (showFraction) {
-                main = r.fraction.orEmpty() + unitSuffix
-                secondary = "≈ ${group(r.formatted(notation), s.groupDigits)}$unitSuffix"
+                main = exact.orEmpty() + unitSuffix
+                secondary = "≈ $decimal$unitSuffix"
             } else {
-                main = group(r.formatted(notation), s.groupDigits) + unitSuffix
-                secondary = r.fraction?.let { f ->
+                main = decimal + unitSuffix
+                secondary = exact?.let { f ->
                     buildString {
                         append("= ").append(f)
                         if (r.mixed != null && r.mixed!!.contains(' ')) append(" (").append(r.mixed).append(')')
@@ -158,13 +160,18 @@ class CalculatorViewModel @Inject constructor(
                     }
                 }
             }
+            // Extra outputs: the angle of Pol(), and degrees-minutes-seconds when the input used degrees.
+            val more = ArrayList<String>()
+            r.extras.forEach { (name, v) -> more.add("$name = ${group(NumberFormatter.format(v.decimal), s.groupDigits)}") }
+            if (r.dms != null && (committed.expression.contains('°') || committed.expression.contains('\''))) more.add("= ${r.dms}")
+            if (more.isNotEmpty()) secondary = (listOfNotNull(secondary) + more).joinToString("   ·   ")
             return base.copy(
                 expression = committed.expression,
                 result = if (r.assignedName != null) "${r.assignedName} = $main" else main,
                 resultExpression = committed.expression,
                 secondaryResult = secondary,
                 warning = r.warnings.firstOrNull(),
-                canToggleFraction = r.fraction != null
+                canToggleFraction = exact != null
             )
         }
         if (ui.error != null) return base.copy(expression = ui.expression, error = ui.error)
@@ -180,7 +187,7 @@ class CalculatorViewModel @Inject constructor(
                 val unit = if (r.unit != null) " ${r.unit}" else ""
                 base.copy(
                     expression = text,
-                    preview = "= " + group(r.formatted(notation), s.groupDigits) + unit,
+                    preview = "= " + group(r.formatted(notation, s.fixDigits), s.groupDigits) + unit,
                     warning = r.warnings.firstOrNull()
                 )
             }
