@@ -71,12 +71,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then VERSION="dry-run"; fi
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/CruxCalculator-$VERSION.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "dist/CruxCalculator-$VERSION.aab"
+          cp app/build/outputs/apk/release/app-release.apk "dist/CruxCalculator.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "dist/CruxCalculator.aab"
 
           APKSIGNER="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/* | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" verify --verbose "dist/CruxCalculator-$VERSION.apk"
-          "$APKSIGNER" verify --print-certs "dist/CruxCalculator-$VERSION.apk" | tee certs.txt
+          "$APKSIGNER" verify --verbose "dist/CruxCalculator.apk"
+          "$APKSIGNER" verify --print-certs "dist/CruxCalculator.apk" | tee certs.txt
 
           # Safety net: the APK must NOT be signed with the public test key that is stored in the repository.
           TEST_KEY=$(keytool -list -v -keystore app/test-signing.keystore -storepass android 2>/dev/null | grep -m1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
@@ -104,6 +104,15 @@ jobs:
         run: |
           PRE=""
           case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac   # v1.2.0-beta1 is published as a pre-release
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Crux Calculator $GITHUB_REF_NAME" \
-            --generate-notes $PRE
+          
+          # If the release page exists (manual web UI release), upload files to it
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists. Uploading newly built files to it..."
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          # If the release page does not exist (Codespace tag push), create it
+          else
+            echo "Release $GITHUB_REF_NAME does not exist. Creating it automatically..."
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "Crux Calculator $GITHUB_REF_NAME" \
+              --generate-notes $PRE
+          fi
