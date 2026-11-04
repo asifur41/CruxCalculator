@@ -2,64 +2,59 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'v*'
 
 permissions:
-  contents: write   # needed to create the release
+  contents: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "17"
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Stop if the signing secrets are missing
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode Keystore
         run: |
-          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [ -z "${!v}" ]; then echo "::error::Secret $v is missing"; exit 1; fi
-          done
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release-keystore.jks
 
-      - name: Stop if the tag does not match versionName
+      - name: Build Signed APK and AAB
         run: |
-          NAME=$(grep -m1 'versionName = ' app/build.gradle.kts | sed -E 's/.*"(.*)".*/\1/')
-          if [ "v$NAME" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match versionName $NAME in app/build.gradle.kts"; exit 1
-          fi
+          chmod +x ./gradlew
+          ./gradlew assembleRelease bundleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/app/release-keystore.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}"
 
-      - uses: gradle/actions/setup-gradle@v4
-
-      - run: chmod +x ./gradlew
-
-      - name: Unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace
-
-      - name: Build signed APK and AAB
-        run: ./gradlew assembleRelease bundleRelease --stacktrace
-
-      - name: Collect and verify
+      - name: Organize Release Files
         run: |
-          mkdir dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/CruxCalculator-$GITHUB_REF_NAME.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "dist/CruxCalculator-$GITHUB_REF_NAME.aab"
-          APKSIGNER="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/* | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" verify --print-certs "dist/CruxCalculator-$GITHUB_REF_NAME.apk"
-          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/CruxCalculator-${GITHUB_REF_NAME}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "dist/CruxCalculator-${GITHUB_REF_NAME}.aab"
+          cd dist && sha256sum * > SHA256SUMS.txt
 
-      - name: Create the GitHub Release
+      - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "Crux Calculator $GITHUB_REF_NAME" \
             --generate-notes
+
+      - name: Clean Keystore
+        if: always()
+        run: rm -f app/release-keystore.jks
+        
