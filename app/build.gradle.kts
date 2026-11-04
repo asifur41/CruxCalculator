@@ -44,7 +44,7 @@ android {
         targetSdk = 36
         // GitHub sets GITHUB_RUN_NUMBER, so every CI build gets a higher versionCode (Google Play requires this).
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "1.3.8"
+        versionName = "1.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
