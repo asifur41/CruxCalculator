@@ -1,0 +1,127 @@
+name: Release
+
+# Publishes a GitHub Release (signed APK + AAB + checksums) when you push a version tag such as v1.2.0.
+# You can also start it by hand (Actions > Release > Run workflow) as a DRY RUN: it builds and checks everything
+# and attaches the files to the run, but publishes nothing.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  release:
+    name: Build, check and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # The four signing secrets are NOT set for the whole job any more. Only the two steps that need them
+    # (the "missing secret" check and the signed build) receive them, so checkout, the setup actions and
+    # the unit tests never see the keystore or its passwords.
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history: app/build.gradle.kts counts commits to build the versionCode
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Stop early if a signing secret is missing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::The GitHub secret $v is missing or empty (repo Settings > Secrets and variables > Actions)."
+              exit 1
+            fi
+          done
+
+      - name: Stop if the tag does not match versionName
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          NAME=$(grep -m1 'versionName = ' app/build.gradle.kts | sed -E 's/.*"(.*)".*/\1/')
+          if [ "v$NAME" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match versionName \"$NAME\" in app/build.gradle.kts. Change versionName, merge it, then tag again."
+            exit 1
+          fi
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      # The build script (app/build.gradle.kts) reads these four values and signs the release with them.
+      - name: Build signed release APK and AAB
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Collect files and check the signature
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then VERSION="dry-run"; fi
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/CruxCalculator.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "dist/CruxCalculator.aab"
+
+          APKSIGNER="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$APKSIGNER" verify --verbose "dist/CruxCalculator.apk"
+          "$APKSIGNER" verify --print-certs "dist/CruxCalculator.apk" | tee certs.txt
+
+          # Safety net: the APK must NOT be signed with the public test key that is stored in the repository.
+          TEST_KEY=$(keytool -list -v -keystore app/test-signing.keystore -storepass android 2>/dev/null | grep -m1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          APK_KEY=$(grep -m1 'SHA-256 digest' certs.txt | awk '{print $NF}' | tr 'A-F' 'a-f')
+          if [ -z "$APK_KEY" ]; then echo "::error::Could not read the APK signature."; exit 1; fi
+          if [ -n "$TEST_KEY" ] && [ "$APK_KEY" = "$TEST_KEY" ]; then
+            echo "::error::The APK is signed with the public TEST key, not your release key. Check the four secrets."; exit 1
+          fi
+          echo "Signed with release key, SHA-256 $APK_KEY"
+
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Keep the files with this run (also for dry runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac   # v1.2.0-beta1 is published as a pre-release
+          
+          # If the release page exists (manual web UI release), upload files to it
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists. Uploading newly built files to it..."
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          # If the release page does not exist (Codespace tag push), create it
+          else
+            echo "Release $GITHUB_REF_NAME does not exist. Creating it automatically..."
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "Crux Calculator $GITHUB_REF_NAME" \
+              --generate-notes $PRE
+          fi
