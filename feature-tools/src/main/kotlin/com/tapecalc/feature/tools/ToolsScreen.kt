@@ -9,10 +9,34 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Analytics
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material.icons.outlined.Casino
+import androidx.compose.material.icons.outlined.FormatListNumbered
+import androidx.compose.material.icons.outlined.Functions
+import androidx.compose.material.icons.outlined.GridOn
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.QrCode
+import androidx.compose.material.icons.outlined.Rule
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.ShowChart
+import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.TrendingFlat
+import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -29,6 +53,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -56,6 +82,28 @@ private val numericResultTools = setOf("solve", "calculus", "dist")
 
 private class HubEntry(val id: String, val title: String, val summary: String)
 
+/** One distinctive icon per tool, so the list can be scanned by picture as well as by name. */
+private fun iconFor(id: String): ImageVector = when (id) {
+    "poly" -> Icons.Outlined.Timeline
+    "linear" -> Icons.Outlined.Rule
+    "solve" -> Icons.Outlined.TrendingFlat
+    "calculus" -> Icons.Outlined.Analytics
+    "algebra" -> Icons.Outlined.Functions
+    "stats1" -> Icons.Outlined.BarChart
+    "stats2" -> Icons.Outlined.TrendingUp
+    "dist" -> Icons.Outlined.Casino
+    "basen" -> Icons.Outlined.Memory
+    "matrix" -> Icons.Outlined.GridOn
+    "eigen" -> Icons.Outlined.Layers
+    "vector" -> Icons.Outlined.Straighten
+    "complex" -> Icons.Outlined.Calculate
+    "steps" -> Icons.Outlined.FormatListNumbered
+    GRAPH_ID -> Icons.Outlined.ShowChart
+    CONSTANTS_ID -> Icons.Outlined.Science
+    QR_ID -> Icons.Outlined.QrCode
+    else -> Icons.Outlined.Functions
+}
+
 private val hubEntries: List<HubEntry> =
     Tools.all.map { HubEntry(it.id, it.title, it.summary) } + listOf(
         HubEntry(GRAPH_ID, "Graph", "Plot up to three functions, pan, zoom, trace, find roots and peaks"),
@@ -70,21 +118,32 @@ private val hubEntries: List<HubEntry> =
 @Composable
 fun ToolsScreen(
     angleMode: AngleMode,
+    /** The id of the open tool, or "" for the list. Kept by the caller so it is never restored by itself. */
+    current: String,
+    onCurrentChange: (String) -> Unit,
+    qrText: String,
+    onQrTextChange: (String) -> Unit,
     onUseInCalculator: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var current by rememberSaveable { mutableStateOf("") }
-    var qrText by rememberSaveable { mutableStateOf("") }
     val ctx = remember(angleMode) { EvalContext(angleMode = angleMode) }
+
+    // The graph takes the whole area (no title bar, no padding); it has its own back button.
+    if (current == GRAPH_ID) {
+        GraphPane(angleMode = angleMode, onBack = { onCurrentChange("") }, modifier = modifier.fillMaxSize())
+        return
+    }
 
     Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         if (current.isEmpty()) {
-            ToolsHub(onOpen = { current = it })
+            ToolsHub(onOpen = onCurrentChange)
         } else {
             val entry = hubEntries.firstOrNull { it.id == current }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { current = "" }) { Text("‹ Tools") }
+                OutlinedButton(onClick = { onCurrentChange("") }) { Text("‹ Tools") }
                 Spacer(Modifier.padding(horizontal = 6.dp))
+                Icon(iconFor(current), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.padding(horizontal = 4.dp))
                 Text(
                     entry?.title ?: "",
                     style = MaterialTheme.typography.titleLarge,
@@ -93,9 +152,8 @@ fun ToolsScreen(
             }
             Spacer(Modifier.height(8.dp))
             when (current) {
-                GRAPH_ID -> GraphPane(angleMode = angleMode, modifier = Modifier.weight(1f))
                 CONSTANTS_ID -> ConstantsPane(onUseInCalculator = onUseInCalculator, modifier = Modifier.weight(1f))
-                QR_ID -> QrPane(text = qrText, onTextChange = { qrText = it }, modifier = Modifier.weight(1f))
+                QR_ID -> QrPane(text = qrText, onTextChange = onQrTextChange, modifier = Modifier.weight(1f))
                 else -> {
                     val spec = Tools.byId(current)
                     if (spec != null) {
@@ -103,7 +161,7 @@ fun ToolsScreen(
                             spec = spec,
                             ctx = ctx,
                             onUseInCalculator = onUseInCalculator,
-                            onMakeQr = { qrText = it; current = QR_ID },
+                            onMakeQr = { onQrTextChange(it); onCurrentChange(QR_ID) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -130,13 +188,25 @@ private fun ToolsHub(onOpen: (String) -> Unit) {
                 modifier = Modifier.fillMaxWidth().clickable { onOpen(entry.id) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(entry.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        entry.summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(iconFor(entry.id), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.padding(horizontal = 7.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(entry.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            entry.summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

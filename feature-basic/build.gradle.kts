@@ -34,4 +34,5 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(project(":core-ui"))
+    implementation(project(":core-math"))
 }

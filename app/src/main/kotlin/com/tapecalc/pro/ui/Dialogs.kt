@@ -1,13 +1,20 @@
 package com.tapecalc.pro.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -16,14 +23,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tapecalc.core.data.domain.Workspace
+import com.tapecalc.core.data.settings.AppSettings
+import com.tapecalc.core.math.AngleMode
+import com.tapecalc.core.math.NumberNotation
 
 /** Free-text entry, for example `12 km to mi`, `rate = 0.18` or `sqrt(2)*5`. */
 @Composable
@@ -168,5 +180,101 @@ fun ExportDialog(
                 TextButton(onClick = onDismiss) { Text("Cancel") }
             }
         }
+    )
+}
+
+/**
+ * MODE key: angle unit, how results are written, and fractions. The same choices as in Settings, but within reach
+ * of the keypad, like the MODE menu of a physical calculator.
+ */
+@Composable
+fun ModeDialog(
+    settings: AppSettings,
+    onChange: ((AppSettings) -> AppSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val angle = AngleMode.fromName(settings.angleMode)
+    val notation = NumberNotation.fromName(settings.numberNotation)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Mode") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Angle unit", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AngleMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = mode == angle,
+                            onClick = { onChange { it.copy(angleMode = mode.name) } },
+                            label = { Text(mode.label) }
+                        )
+                    }
+                }
+                Text("Result format", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    NumberNotation.entries.forEach { n ->
+                        FilterChip(
+                            selected = n == notation,
+                            onClick = { onChange { it.copy(numberNotation = n.name) } },
+                            label = { Text(n.label) }
+                        )
+                    }
+                }
+                if (notation == NumberNotation.FIXED) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick = { onChange { it.copy(fixDigits = (it.fixDigits - 1).coerceAtLeast(0)) } }) { Text("−") }
+                        Text("${settings.fixDigits} decimal places")
+                        OutlinedButton(onClick = { onChange { it.copy(fixDigits = (it.fixDigits + 1).coerceAtMost(9)) } }) { Text("+") }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show answers as fractions when possible", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = settings.fractionByDefault,
+                        onCheckedChange = { on -> onChange { it.copy(fractionByDefault = on) } }
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
+}
+
+/** CALC key: asks for the value of each letter the calculation uses but has no stored value for. */
+@Composable
+fun CalcValuesDialog(
+    names: List<String>,
+    onCalculate: (Map<String, String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val values = remember(names) { mutableStateMapOf<String, String>().apply { names.forEach { put(it, "") } } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enter the values") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                names.forEach { name ->
+                    OutlinedTextField(
+                        value = values[name] ?: "",
+                        onValueChange = { values[name] = it.take(40) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("$name =") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    )
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onCalculate(values.toMap()) }) { Text("Calculate") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

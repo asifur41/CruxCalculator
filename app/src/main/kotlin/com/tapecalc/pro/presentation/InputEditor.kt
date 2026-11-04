@@ -21,7 +21,8 @@ object InputEditor {
 
     private fun endsWithOperand(text: String): Boolean {
         val c = text.lastOrNull() ?: return false
-        return c.isLetterOrDigit() || c == ')' || c == '.' || c == '%' || c == '!' || c == 'π'
+        // a closed template (a fraction, an integral...) counts as a finished operand, so "^2" or "×" may follow it
+        return c.isLetterOrDigit() || c == ')' || c == '.' || c == '%' || c == '!' || c == 'π' || c == com.tapecalc.core.math.editor.Mk.END
     }
 
     private fun openParens(text: String): Int {

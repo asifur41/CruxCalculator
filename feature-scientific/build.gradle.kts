@@ -34,4 +34,6 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(project(":core-ui"))
     implementation(project(":feature-basic"))
+    implementation(project(":core-math"))
+    implementation(libs.coroutines.core)
 }

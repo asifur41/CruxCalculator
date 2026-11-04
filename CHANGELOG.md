@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Added (update 4)
+* **Casio-style scientific keypad**: SHIFT, ALPHA, HYP layers (one-shot), D-pad cursor pad, MODE, CALC, integral, x^-1,
+  log base, a/b, root, x^2, x^y, log, ln, (-), degrees-minutes-seconds, hyp, trig, RCL / STO, ENG, S<=>D, M+ / M-,
+  EXP and Ans. The existing dark theme, teal accents and rounded keys are kept.
+* **Single bracket key** on the scientific keypad: tap for "(", long-press for ")". Basic keeps two keys.
+* **Movable cursor** with natural-display templates: fraction, mixed fraction, log base, n-th root, integral, sum, product
+  and derivative with empty boxes to fill in; up/down jump between boxes; long equations wrap onto several lines.
+* **Taller scientific display** with automatic font shrinking; tap a tape line to bring its equation back for editing.
+* **Variables screen**: A-Z (without E), Ans, PreAns, 3x3 matrices MatA-MatD and vectors VctA-VctD, each with an input
+  box, a bin and a send arrow.
+* **Graph**: full screen, dark grid with x / y labels, floating Zoom in, Zoom out, Home and Centre buttons, smooth pan
+  and pinch.
+* Distinct icons for every tool.
+
+### Fixed (update 4)
+* The on-screen keyboard no longer appears by itself after visiting QR, going back and reopening the app; it opens
+  only when a text box is tapped.
+* QR opens only when its button is tapped and is not remembered.
+* Lag: only the visible tab is built; the graph draws fewer samples while you move it.
+* Swipe navigation between Basic / Scientific / Convert / Tools is removed; use the bottom bar.
+
+### Known limits (update 4)
+* Casio keys with no engine support yet are left out: angle sign, factorial-key variants, Ran#, CLRv, cot, i.
+* Sending a matrix or vector to its tool copies the values and opens the tool; paste them there.
+
 ### Added (update 3)
 * **Calculator language**: Fix / Norm 1 / Norm 2 number formats (Settings, with 0-9 decimal places for Fix); colon
   statements (`A=5 : B=A*2 : B+1`); degrees-minutes-seconds input (`2°30'15"`, `45°`) and DMS read-out; `Pol(x,y)` and

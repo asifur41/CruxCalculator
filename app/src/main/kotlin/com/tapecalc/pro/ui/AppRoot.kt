@@ -4,7 +4,6 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,7 +11,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,9 +22,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Calculate
@@ -51,13 +46,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -66,9 +61,14 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tapecalc.core.data.domain.ExportFormat
 import com.tapecalc.core.data.settings.AppSettings
@@ -86,9 +86,6 @@ import com.tapecalc.feature.scientific.ScientificScreen
 import com.tapecalc.feature.tools.ToolsScreen
 import com.tapecalc.pro.presentation.CalculatorViewModel
 import com.tapecalc.pro.presentation.UiEvent
-import kotlin.math.abs
-import kotlin.math.absoluteValue
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class Tab(val title: String, val icon: ImageVector) {
@@ -131,14 +128,6 @@ private fun hardwareAction(event: androidx.compose.ui.input.key.KeyEvent): KeyAc
         '=' -> KeyAction.Equals
         else -> null
     }
-}
-
-/** Smooth tab change: one eased slide (a little longer when jumping over tabs), never a snap. */
-@OptIn(ExperimentalFoundationApi::class)
-private suspend fun PagerState.goToTab(target: Int) {
-    if (target == currentPage) return
-    val duration = if (abs(target - currentPage) > 1) 340 else 280
-    animateScrollToPage(target, animationSpec = tween(durationMillis = duration, easing = FastOutSlowInEasing))
 }
 
 // The screens below collect the fast-changing display state THEMSELVES. That way a key press
@@ -223,7 +212,6 @@ private fun SettingsPage(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppRoot(viewModel: CalculatorViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -246,17 +234,63 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     var historySection by rememberSaveable { mutableStateOf(HistorySection.TAPE) }
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
     // Kept here (not inside the phone layout) so the selected tab survives opening Settings.
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { Tab.entries.size })
-    // Only the first tab is built at start-up (faster launch); the others are prepared right after.
-    var preloadPages by remember { mutableStateOf(0) }
+    // There is no swipe between tabs any more: the bottom bar is the only way to switch, and only the selected
+    // tab is built, which keeps typing and scrolling light.
+    var selectedTab by rememberSaveable { mutableStateOf(Tab.BASIC.ordinal) }
+    val tabStates = rememberSaveableStateHolder()
+    // Which tool is open on the Tools tab, and the QR text. Plain `remember`, not saved: the Tools tab must always
+    // open on its list, so the QR screen (and its text box) only appears after tapping the QR code button.
+    var toolsCurrent by remember { mutableStateOf("") }
+    var qrText by remember { mutableStateOf("") }
+    var showMode by remember { mutableStateOf(false) }
+    var calcPrompt by remember { mutableStateOf<List<String>?>(null) }
+
+    val configuration = LocalConfiguration.current
+    val twoPane = configuration.screenWidthDp >= 840
+    val twoPaneNow by rememberUpdatedState(twoPane)
 
     val showOnboarding = !settings.onboardingDone || replayTutorial
-    LaunchedEffect(showOnboarding) {
-        if (showOnboarding) {
-            preloadPages = 0
-        } else {
-            delay(300)
-            preloadPages = Tab.entries.size - 1
+
+    // ---- keyboard and focus -------------------------------------------------------------------------
+    // A text box that still has focus keeps asking Android for the on-screen keyboard, even when the tab it is on
+    // is no longer visible. So whenever the tab changes, or the app leaves the screen, focus is dropped and the
+    // keyboard hidden. The keyboard then appears only when a text box is tapped.
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val dropFocus: () -> Unit = remember(focusManager, keyboard) {
+        {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
+    val selectTab: (Tab) -> Unit = remember(dropFocus) {
+        { tab ->
+            dropFocus()
+            if (tab != Tab.TOOLS) toolsCurrent = ""
+            selectedTab = tab.ordinal
+        }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        dropFocus()
+        toolsCurrent = "" // coming back to the app, Tools starts at its list again
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { dropFocus() }
+    LaunchedEffect(selectedTab) { dropFocus() }
+
+    // The graph is shown full screen, without the bottom bar; Back (or its own arrow) returns to the Tools list.
+    val toolOpen = toolsCurrent.isNotEmpty() && (selectedTab == Tab.TOOLS.ordinal || twoPane)
+    val fullScreenGraph = toolOpen && toolsCurrent == "graph" && !twoPane
+    BackHandler(enabled = toolOpen) { toolsCurrent = "" }
+
+    val openTool: (String) -> Unit = remember(dropFocus) {
+        { id ->
+            dropFocus()
+            if (id == "convert") {
+                if (twoPaneNow) sidePane = SidePane.CONVERT else selectedTab = Tab.CONVERT.ordinal
+            } else {
+                toolsCurrent = id
+                if (twoPaneNow) sidePane = SidePane.TOOLS else selectedTab = Tab.TOOLS.ordinal
+            }
         }
     }
 
@@ -298,10 +332,33 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     // The handlers below are remembered so their identity never changes between recompositions;
     // that lets Compose skip the keypads while the display text changes.
     val latestSettings by rememberUpdatedState(settings)
-    val onKey: (KeyAction) -> Unit = remember(viewModel, feedback, clipboard) {
+    val onKey: (KeyAction) -> Unit = remember(viewModel, feedback, clipboard, selectTab, openTool) {
         { action ->
             feedback.key(latestSettings.hapticLevel, latestSettings.soundEnabled)
-            if (action == KeyAction.Paste) viewModel.onPaste(clipboard.getText()?.text) else viewModel.onKey(action)
+            when (action) {
+                KeyAction.Paste -> {
+                    viewModel.onPaste(clipboard.getText()?.text)
+                    viewModel.clearModifiers()
+                }
+                KeyAction.Calc -> {
+                    val missing = viewModel.missingVariables()
+                    if (missing.isEmpty()) viewModel.onKey(KeyAction.Equals) else calcPrompt = missing
+                    viewModel.clearModifiers()
+                }
+                KeyAction.OpenMode -> {
+                    showMode = true
+                    viewModel.clearModifiers()
+                }
+                KeyAction.OpenTape -> {
+                    if (twoPaneNow) sidePane = SidePane.TAPE else selectTab(Tab.TAPE)
+                    viewModel.clearModifiers()
+                }
+                is KeyAction.OpenTool -> {
+                    openTool(action.id)
+                    viewModel.clearModifiers()
+                }
+                else -> viewModel.onKey(action)
+            }
         }
     }
 
@@ -317,20 +374,20 @@ fun AppRoot(viewModel: CalculatorViewModel) {
             onAction = onKey
         )
     }
-    val phoneActions = remember(displayActions, pagerState) {
+    val phoneActions = remember(displayActions, selectTab) {
         DisplayActions(
             onWorkspaceClick = displayActions.onWorkspaceClick,
             onTypeExpression = displayActions.onTypeExpression,
             onCopyResult = displayActions.onCopyResult,
             onCopyExpression = displayActions.onCopyExpression,
             onPaste = displayActions.onPaste,
-            onOpenTape = { scope.launch { pagerState.goToTab(Tab.TAPE.ordinal) } },
+            onOpenTape = { selectTab(Tab.TAPE) },
             onSettings = { showSettings = true },
             onAction = displayActions.onAction
         )
     }
 
-    val historyActions = remember(viewModel) {
+    val historyActions = remember(viewModel, selectTab, openTool) {
         HistoryActions(
             onEntryClick = viewModel::openEditor,
             onExport = viewModel::export,
@@ -338,15 +395,23 @@ fun AppRoot(viewModel: CalculatorViewModel) {
             onClearTape = viewModel::clearTape,
             onAddVariable = { text -> viewModel.addVariable(text) },
             onDeleteVariable = viewModel::deleteVariable,
-            onInsertText = { text -> viewModel.insertText(text) }
+            onInsertText = { text ->
+                viewModel.insertText(text)
+                if (!twoPaneNow) selectTab(Tab.SCIENTIFIC) // "send to the calculator" should land on the calculator
+            },
+            onSaveRaw = { name, value, shown -> viewModel.saveRawVariable(name, value, shown) },
+            onSendToTool = { toolId, name, text ->
+                viewModel.copyEntryText(text, "$name copied. Paste it into the tool.")
+                openTool(toolId)
+            }
         )
     }
     val onChangeSettings: ((AppSettings) -> AppSettings) -> Unit = remember(viewModel) { { transform -> viewModel.updateSettings(transform) } }
     val onReplayTutorial: () -> Unit = remember { { replayTutorial = true } }
-    val useInCalculator: (String) -> Unit = remember(viewModel, pagerState) {
+    val useInCalculator: (String) -> Unit = remember(viewModel, selectTab) {
         { text ->
             viewModel.submitText(text)
-            scope.launch { pagerState.goToTab(Tab.BASIC.ordinal) }
+            selectTab(Tab.BASIC)
         }
     }
 
@@ -381,8 +446,6 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                         } else false
                     }
             ) {
-                val twoPane = maxWidth >= 840.dp
-
                 if (twoPane) {
                     Scaffold(
                         containerColor = MaterialTheme.colorScheme.background,
@@ -429,6 +492,10 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                                     )
                                     SidePane.TOOLS -> ToolsScreen(
                                         angleMode = AngleMode.fromName(settings.angleMode),
+                                        current = toolsCurrent,
+                                        onCurrentChange = { toolsCurrent = it },
+                                        qrText = qrText,
+                                        onQrTextChange = { qrText = it },
                                         onUseInCalculator = { viewModel.submitText(it) },
                                         modifier = Modifier.weight(1f)
                                     )
@@ -459,40 +526,34 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                             containerColor = MaterialTheme.colorScheme.background,
                             snackbarHost = { SnackbarHost(snackbar) },
                             bottomBar = {
-                                NavigationBar {
-                                    Tab.entries.forEach { tab ->
-                                        NavigationBarItem(
-                                            selected = pagerState.currentPage == tab.ordinal,
-                                            onClick = { scope.launch { pagerState.goToTab(tab.ordinal) } },
-                                            icon = { Icon(tab.icon, contentDescription = null) },
-                                            label = { Text(tab.title) }
-                                        )
+                                if (!fullScreenGraph) {
+                                    NavigationBar {
+                                        Tab.entries.forEach { tab ->
+                                            NavigationBarItem(
+                                                selected = selectedTab == tab.ordinal,
+                                                onClick = { selectTab(tab) },
+                                                icon = { Icon(tab.icon, contentDescription = null) },
+                                                label = { Text(tab.title) }
+                                            )
+                                        }
                                     }
                                 }
                             }
                         ) { padding ->
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier.fillMaxSize().padding(padding),
-                                beyondViewportPageCount = preloadPages
-                            ) { page ->
-                                // Pages fade and shrink slightly while they slide, which makes tab changes look smooth.
-                                Box(
-                                    Modifier.fillMaxSize().graphicsLayer {
-                                        val distance = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
-                                            .absoluteValue.coerceIn(0f, 1f)
-                                        alpha = 1f - 0.6f * distance
-                                        val scale = 1f - 0.05f * distance
-                                        scaleX = scale
-                                        scaleY = scale
-                                    }
-                                ) {
-                                    when (Tab.entries[page]) {
+                            Box(Modifier.fillMaxSize().padding(padding)) {
+                                val tab = Tab.entries[selectedTab.coerceIn(0, Tab.entries.lastIndex)]
+                                // each tab keeps its own remembered state (scroll position, typed text) while it is not on screen
+                                tabStates.SaveableStateProvider(tab.name) {
+                                    when (tab) {
                                         Tab.BASIC -> BasicTab(viewModel, phoneActions, settings.leftHanded)
                                         Tab.SCIENTIFIC -> ScientificTab(viewModel, phoneActions, settings.leftHanded)
                                         Tab.CONVERT -> ConverterScreen(onUseInCalculator = useInCalculator)
                                         Tab.TOOLS -> ToolsScreen(
                                             angleMode = AngleMode.fromName(settings.angleMode),
+                                            current = toolsCurrent,
+                                            onCurrentChange = { toolsCurrent = it },
+                                            qrText = qrText,
+                                            onQrTextChange = { qrText = it },
                                             onUseInCalculator = useInCalculator
                                         )
                                         Tab.TAPE -> HistoryTab(
@@ -548,6 +609,21 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     }
 
     EditorHost(viewModel, settings.autoRecalc)
+
+    if (showMode) {
+        ModeDialog(settings = settings, onChange = onChangeSettings, onDismiss = { showMode = false })
+    }
+    val prompt = calcPrompt
+    if (prompt != null) {
+        CalcValuesDialog(
+            names = prompt,
+            onCalculate = { values ->
+                calcPrompt = null
+                viewModel.calculateWith(values)
+            },
+            onDismiss = { calcPrompt = null }
+        )
+    }
 
     val export = pendingExport
     if (export != null && editingId == null) {

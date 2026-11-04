@@ -75,7 +75,11 @@ class HistoryActions(
     /** Returns an error message, or null when the variable was saved. */
     val onAddVariable: suspend (String) -> String?,
     val onDeleteVariable: (String) -> Unit,
-    val onInsertText: (String) -> Unit
+    val onInsertText: (String) -> Unit,
+    /** Stores a matrix or vector: name, text to keep, short text to show. */
+    val onSaveRaw: (String, String, String) -> Unit,
+    /** Opens a tool with a text copied for pasting: tool id, name of the value, the text. */
+    val onSendToTool: (String, String, String) -> Unit
 )
 
 private fun grouped(text: String, enabled: Boolean) = if (enabled) NumberFormatter.group(text) else text
@@ -106,7 +110,16 @@ fun HistoryHub(
         }
         when (section) {
             HistorySection.TAPE -> TapePanel(entries, workspaceName, groupDigits, actions, Modifier.weight(1f))
-            HistorySection.VARIABLES -> VariablesPanel(variables, actions, Modifier.weight(1f))
+            HistorySection.VARIABLES -> {
+                val results = entries.filter { !it.isError }.map { it.displayResult }
+                VariablesPanel(
+                    variables = variables,
+                    ans = results.lastOrNull(),
+                    preAns = results.getOrNull(results.size - 2),
+                    actions = actions,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             HistorySection.NOTES -> NotesPanel(entries, groupDigits, actions, Modifier.weight(1f))
         }
     }
@@ -348,85 +361,6 @@ fun NotesPanel(
         ) {
             items(annotated, key = { it.id }) { entry ->
                 EntryRow(entry, groupDigits) { actions.onEntryClick(entry) }
-            }
-        }
-    }
-}
-
-@Composable
-fun VariablesPanel(
-    variables: List<VariableItem>,
-    actions: HistoryActions,
-    modifier: Modifier = Modifier
-) {
-    var input by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    fun submit() {
-        val text = input
-        if (text.isBlank()) return
-        scope.launch {
-            val problem = actions.onAddVariable(text)
-            if (problem == null) {
-                input = ""
-                error = null
-            } else {
-                error = problem
-            }
-        }
-    }
-
-    Column(modifier.padding(horizontal = 16.dp)) {
-        Text(
-            "Save values once and reuse them in any expression. You can also type  x = 5  into the calculator.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it; error = null },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("name = value, e.g. rate = 0.18") },
-                isError = error != null,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submit() })
-            )
-            Button(onClick = { submit() }, enabled = input.isNotBlank()) { Text("Save") }
-        }
-        if (error != null) {
-            Text(error ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(8.dp))
-        if (variables.isEmpty()) {
-            Text("No variables yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(variables, key = { it.name }) { v ->
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable(onClickLabel = "Insert ${v.name} into the calculator") { actions.onInsertText(v.name) }
-                                .padding(start = 14.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(v.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                Text(v.displayText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(onClick = { actions.onInsertText(v.name) }) {
-                                Icon(Icons.Outlined.Add, contentDescription = "Insert ${v.name}")
-                            }
-                            IconButton(onClick = { actions.onDeleteVariable(v.name) }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Delete ${v.name}")
-                            }
-                        }
-                    }
-                }
             }
         }
     }

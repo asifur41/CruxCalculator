@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tapecalc.core.math.editor.Mk
 import com.tapecalc.core.ui.KeyAction
 import com.tapecalc.core.ui.LocalCalcLook
 import com.tapecalc.core.ui.StatusChip
@@ -62,7 +63,14 @@ data class DisplayState(
     val secondaryResult: String? = null,
     val angleLabel: String = "DEG",
     val workspaceName: String = "",
-    val canToggleFraction: Boolean = false
+    val canToggleFraction: Boolean = false,
+    /** Cursor position in [expression]; -1 means at the end. */
+    val cursor: Int = -1,
+    val shift: Boolean = false,
+    val alpha: Boolean = false,
+    val hyp: Boolean = false,
+    /** "STO: press a letter" while waiting for the letter after STO / RCL. */
+    val pendingLabel: String? = null
 )
 
 class DisplayActions(
@@ -76,6 +84,17 @@ class DisplayActions(
     val onAction: (KeyAction) -> Unit
 )
 
+/**
+ * Font size that makes a line of [length] characters fit the width [availableDp] on one line, shrinking down to
+ * [minSp]; below that the line wraps instead. Used by the scientific screen, where lines get long.
+ */
+internal fun fitFontSize(availableDp: Float, length: Int, maxSp: Float, minSp: Float): Float {
+    if (length <= 0) return maxSp
+    // an average digit is about 0.56 of the font size wide
+    val fits = availableDp / (length * 0.56f)
+    return fits.coerceIn(minSp, maxSp)
+}
+
 private fun expressionFontSize(length: Int): Int = when {
     length <= 9 -> 56
     length <= 14 -> 44
@@ -88,7 +107,11 @@ fun CalculatorDisplay(
     state: DisplayState,
     miniTape: List<MiniTapeLine>,
     actions: DisplayActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** How many earlier calculations to show above the current line. */
+    maxTapeLines: Int = 2,
+    /** Scientific screen: shrink long lines to fit, always show the cursor, tapping an earlier line edits it. */
+    scientific: Boolean = false
 ) {
     val look = LocalCalcLook.current
     val scale = look.fontScale
@@ -98,20 +121,24 @@ fun CalculatorDisplay(
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         DisplayHeader(state, actions)
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
+            val widthDp = maxWidth.value
             Column(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
                 horizontalAlignment = Alignment.End
             ) {
-                miniTape.takeLast(2).forEach { line ->
+                miniTape.takeLast(maxTapeLines).forEach { line ->
                     Text(
-                        text = "${line.expression} = ${line.result}",
+                        text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
                         color = muted,
                         fontSize = 14.sp * scale,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .clickable(onClickLabel = "Open tape", onClick = actions.onOpenTape)
+                            .clickable(
+                                onClickLabel = if (scientific) "Edit this line" else "Open tape",
+                                onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
+                            )
                             .padding(vertical = 2.dp)
                     )
                 }
@@ -123,11 +150,12 @@ fun CalculatorDisplay(
                 ) {
                     if (state.result != null) {
                         if (!state.resultExpression.isNullOrBlank()) {
-                            Text(
+                            MathText(
                                 text = state.resultExpression,
+                                cursor = null,
+                                fontSize = (if (scientific) fitFontSize(widthDp, Mk.stripMarkers(state.resultExpression).length, 22f, 15f) else 20f).sp * scale,
                                 color = muted,
-                                fontSize = 20.sp * scale,
-                                textAlign = TextAlign.End
+                                weight = FontWeight.Normal
                             )
                         }
                         Text(
@@ -135,7 +163,7 @@ fun CalculatorDisplay(
                             color = onBg,
                             textAlign = TextAlign.End,
                             style = TextStyle(
-                                fontSize = expressionFontSize(state.result.length).sp * scale,
+                                fontSize = (if (scientific) fitFontSize(widthDp, state.result.length, 48f, 22f) else expressionFontSize(state.result.length).toFloat()).sp * scale,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFeatureSettings = "tnum"
                             ),
@@ -154,16 +182,21 @@ fun CalculatorDisplay(
                             )
                         }
                     } else {
-                        Text(
-                            text = state.expression.ifEmpty { "0" },
-                            color = if (state.expression.isEmpty()) muted else onBg,
-                            textAlign = TextAlign.End,
-                            style = TextStyle(
-                                fontSize = expressionFontSize(state.expression.length).sp * scale,
-                                fontWeight = FontWeight.Medium,
-                                fontFeatureSettings = "tnum"
+                        val shownLength = Mk.stripMarkers(state.expression).length
+                        val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
+                        val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
+                        // the basic screen only shows the cursor when it is somewhere other than the end of the line
+                        val showCursor = scientific || cursor < state.expression.length
+                        if (state.expression.isEmpty() && !showCursor) {
+                            Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
+                        } else {
+                            MathText(
+                                text = state.expression,
+                                cursor = if (showCursor) cursor else null,
+                                fontSize = fontSp,
+                                color = onBg
                             )
-                        )
+                        }
                         if (state.error != null) {
                             Text(
                                 text = state.error,
@@ -180,6 +213,14 @@ fun CalculatorDisplay(
                                 style = TextStyle(fontFeatureSettings = "tnum")
                             )
                         }
+                    }
+                    if (state.pendingLabel != null) {
+                        Text(
+                            text = state.pendingLabel,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            fontSize = 13.sp * scale,
+                            textAlign = TextAlign.End
+                        )
                     }
                     if (state.warning != null) {
                         Text(
@@ -198,6 +239,7 @@ fun CalculatorDisplay(
 
 @Composable
 private fun DisplayHeader(state: DisplayState, actions: DisplayActions) {
+    val look = LocalCalcLook.current
     var copyMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -228,6 +270,9 @@ private fun DisplayHeader(state: DisplayState, actions: DisplayActions) {
                 content = MaterialTheme.colorScheme.onPrimary
             )
         }
+        if (state.shift) StatusChip("SHIFT", container = look.colors.accent, content = look.colors.onAccent)
+        if (state.alpha) StatusChip("ALPHA", container = MaterialTheme.colorScheme.tertiary, content = MaterialTheme.colorScheme.onTertiary)
+        if (state.hyp) StatusChip("hyp", container = MaterialTheme.colorScheme.secondary, content = MaterialTheme.colorScheme.onSecondary)
         Spacer(Modifier.weight(1f))
         IconButton(onClick = actions.onTypeExpression) {
             Icon(Icons.Outlined.Keyboard, contentDescription = "Type an expression, for example 12 km to mi")

@@ -90,6 +90,14 @@ class TapeRepository(
         variables.upsert(VariableEntity(name, value.serialize(), NumberFormatter.format(value.decimal), null, clock()))
     }
 
+    /**
+     * Stores a value that is not a single number (a matrix or a vector). The calculator engine ignores such values
+     * when it reads variables; the variables screen reads them back by name.
+     */
+    suspend fun saveRawVariable(name: String, valueText: String, displayText: String) {
+        variables.upsert(VariableEntity(name, valueText, displayText, null, clock()))
+    }
+
     /** Accepts text such as `rate = 0.18` and stores the variable. */
     suspend fun setVariable(text: String, angleMode: AngleMode = AngleMode.DEG): EvalOutcome {
         val ctx = EvalContext(angleMode, loadVariables(), null)
