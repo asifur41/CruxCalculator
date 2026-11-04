@@ -78,8 +78,10 @@ jobs:
       - name: Build release AAB (for Google Play)
         run: ./gradlew bundleRelease --stacktrace
 
+      # -PtestSign=true signs this APK with the public test key (only when no real signing secrets exist),
+      # so the optimized release build can be installed on a phone. The AAB above is never signed with it.
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease -PtestSign=true --stacktrace
 
       - name: Collect build outputs
         run: |

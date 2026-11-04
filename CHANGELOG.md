@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed (update 6)
+* The CI now builds an **installable, optimized release APK** (`app-release.apk`) signed with a public test key, so
+  the real speed of the app can be tested. The debug APK is much slower and larger by design. Google Play builds are
+  unaffected: real signing secrets always win and the AAB is never signed with the test key.
+* New `docs/PERFORMANCE.md`: why debug builds are slow, why the installed size grows, and how to measure.
+
 ### Added (update 5)
 * **All 47 constants of the Casio fx-991EX list** (23 new: Z0, Planck length/time, nuclear magneton, flux quantum,
   conductance quantum, Josephson and von Klitzing constants (and their 1990 values), muon / tau masses, classical electron

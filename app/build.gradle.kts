@@ -18,6 +18,12 @@ val keyAliasName: String? = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank()
 val keyPasswordValue: String? = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
 val hasSigningSecrets = keystoreBase64 != null && keystorePassword != null && keyAliasName != null && keyPasswordValue != null
 
+// Test-only signing: `./gradlew assembleRelease -PtestSign=true` signs the release APK with the public key stored in
+// app/test-signing.keystore, so the optimized build can be installed on a phone (an unsigned APK cannot be installed) and
+// later test builds update over earlier ones. It is NEVER used for Google Play: real secrets always win, and the AAB step
+// does not pass the flag.
+val useTestSigning: Boolean = !hasSigningSecrets && providers.gradleProperty("testSign").orNull == "true"
+
 val decodedKeystore: File? = if (hasSigningSecrets) {
     val file = layout.buildDirectory.file("signing/release.keystore").get().asFile
     file.parentFile.mkdirs()
@@ -51,6 +57,12 @@ android {
                 keyPassword = keyPasswordValue
             }
         }
+        create("testKey") {
+            storeFile = file("test-signing.keystore")
+            storePassword = "android"
+            keyAlias = "cruxtest"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -62,7 +74,11 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = if (hasSigningSecrets) signingConfigs.getByName("release") else null
+            signingConfig = when {
+                hasSigningSecrets -> signingConfigs.getByName("release")
+                useTestSigning -> signingConfigs.getByName("testKey")
+                else -> null
+            }
         }
     }
 
