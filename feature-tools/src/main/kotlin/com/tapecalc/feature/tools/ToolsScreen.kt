@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.tapecalc.core.math.Constants
 import androidx.compose.ui.unit.sp
 import com.tapecalc.core.math.AngleMode
 import com.tapecalc.core.math.EvalContext
@@ -107,7 +108,7 @@ private fun iconFor(id: String): ImageVector = when (id) {
 private val hubEntries: List<HubEntry> =
     Tools.all.map { HubEntry(it.id, it.title, it.summary) } + listOf(
         HubEntry(GRAPH_ID, "Graph", "Plot up to three functions, pan, zoom, trace, find roots and peaks"),
-        HubEntry(CONSTANTS_ID, "Constants", "25 physical constants: tap one to use it"),
+        HubEntry(CONSTANTS_ID, "Constants", "${Constants.all.size} physical constants: tap one to use it"),
         HubEntry(QR_ID, "QR code", "Turn any text, result or equation into a QR code (works offline)")
     )
 

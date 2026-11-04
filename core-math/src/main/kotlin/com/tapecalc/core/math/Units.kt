@@ -8,7 +8,7 @@ import java.math.MathContext
 enum class UnitCategory(val title: String) {
     LENGTH("Length"), MASS("Mass"), VOLUME("Volume"), TEMPERATURE("Temperature"),
     SPEED("Speed"), AREA("Area"), DATA("Data"), PRESSURE("Pressure"),
-    ENERGY("Energy"), TIME("Time"), ANGLE("Angle"), FUEL("Fuel economy")
+    ENERGY("Energy"), POWER("Power"), TIME("Time"), ANGLE("Angle"), FUEL("Fuel economy")
 }
 
 /**
@@ -69,11 +69,14 @@ object UnitRegistry {
         val D = UnitCategory.DATA
         val P = UnitCategory.PRESSURE
         val E = UnitCategory.ENERGY
+        val PW = UnitCategory.POWER
         val TM = UnitCategory.TIME
         val AN = UnitCategory.ANGLE
         val F = UnitCategory.FUEL
         val radFactor = Rational.fromBigDecimal(BigDecimal(180).divide(BigMath.pi, MathContext(60)))
         val ninetyNine = r("459.67")
+        // parsec = 648000/π astronomical units (IAU 2015); the astronomical unit is exactly 149 597 870 700 m
+        val parsec = Rational.fromBigDecimal(BigDecimal(648000).multiply(BigDecimal(149597870700L)).divide(BigMath.pi, MathContext(60)))
         val fiveNinths = Rational.of(5, 9)
         return listOf(
             // ---- length (base: meter)
@@ -87,7 +90,10 @@ object UnitRegistry {
             u(L, "yd", "yard", "yd", r("0.9144"), "yard", "yards"),
             u(L, "ft", "foot", "ft", r("0.3048"), "foot", "feet"),
             u(L, "in", "inch", "in", r("0.0254"), "inch", "inches"),
-            u(L, "nmi", "nautical mile", "nmi", r("1852"), "nautical mile", "nautical miles"),
+            u(L, "nmi", "nautical mile", "nmi", r("1852"), "n_mile", "nautical mile", "nautical miles"),
+            u(L, "pc", "parsec", "pc", parsec, "parsec", "parsecs"),
+            u(L, "ly", "light year", "ly", r("9460730472580800"), "lightyear", "light year", "light years"),
+            u(L, "au", "astronomical unit", "au", r("149597870700"), "AU", "astronomical unit", "astronomical units"),
             // ---- mass (base: kilogram)
             u(M, "kg", "kilogram", "kg", r("1"), "kilogram", "kilograms", "kilo", "kilos"),
             u(M, "g", "gram", "g", r("0.001"), "gram", "grams"),
@@ -159,6 +165,8 @@ object UnitRegistry {
             u(P, "mmHg", "millimeter of mercury", "mmHg", r("133.322387415")),
             u(P, "torr", "torr", "Torr", Rational.of(101325, 760), "Torr"),
             u(P, "inHg", "inch of mercury", "inHg", r("3386.389")),
+            // 1 kgf/cm² = 9.80665 N / 0.0001 m² (the standard gravity is exact)
+            u(P, "kgfcm2", "kilogram-force per square centimeter", "kgf/cm²", r("98066.5"), "kgf/cm2", "kgf/cm^2", "kgfcm2", "kg/cm2"),
             // ---- energy (base: joule)
             u(E, "J", "joule", "J", r("1"), "joule", "joules"),
             u(E, "kJ", "kilojoule", "kJ", r("1000"), "kilojoule", "kilojoules"),
@@ -169,6 +177,13 @@ object UnitRegistry {
             u(E, "kWh", "kilowatt hour", "kWh", r("3600000"), "kilowatt hour", "kilowatt hours"),
             u(E, "eV", "electronvolt", "eV", r("0.0000000000000000001602176634"), "electronvolt"),
             u(E, "BTU", "British thermal unit", "BTU", r("1055.05585262"), "btu"),
+            u(E, "kgfm", "kilogram-force meter", "kgf·m", r("9.80665"), "kgf_m", "kgf.m", "kgfm", "kgf-m"),
+            // ---- power (base: watt)
+            u(PW, "W", "watt", "W", r("1"), "watt", "watts"),
+            u(PW, "kW", "kilowatt", "kW", r("1000"), "kilowatt", "kilowatts"),
+            u(PW, "MW", "megawatt", "MW", r("1000000"), "megawatt", "megawatts"),
+            u(PW, "hp", "horsepower (mechanical)", "hp", r("745.69987158227022"), "horsepower", "HP"),
+            u(PW, "PS", "metric horsepower", "PS", r("735.49875"), "metric hp", "metric horsepower"),
             // ---- time (base: second)
             u(TM, "s", "second", "s", r("1"), "sec", "secs", "second", "seconds"),
             u(TM, "ms", "millisecond", "ms", r("0.001"), "millisecond", "milliseconds"),

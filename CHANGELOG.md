@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added (update 5)
+* **All 47 constants of the Casio fx-991EX list** (23 new: Z0, Planck length/time, nuclear magneton, flux quantum,
+  conductance quantum, Josephson and von Klitzing constants (and their 1990 values), muon / tau masses, classical electron
+  radius, Compton wavelengths, proton / electron / neutron / muon magnetic moments, proton gyromagnetic ratio, first and
+  second radiation constants). The Constants tool now lists them in the same five groups as the Casio list. See
+  `docs/CONSTANTS_AND_UNITS.md`.
+* **All 40 conversion directions** of that list: new parsec, kgf/cm2, horsepower <-> kW (new Power category) and kgf·m,
+  plus light-year and astronomical unit.
+
 ### Added (update 4)
 * **Casio-style scientific keypad**: SHIFT, ALPHA, HYP layers (one-shot), D-pad cursor pad, MODE, CALC, integral, x^-1,
   log base, a/b, root, x^2, x^y, log, ln, (-), degrees-minutes-seconds, hyp, trig, RCL / STO, ENG, S<=>D, M+ / M-,

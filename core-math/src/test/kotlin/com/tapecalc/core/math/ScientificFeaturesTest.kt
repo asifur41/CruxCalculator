@@ -198,7 +198,7 @@ class ScientificFeaturesTest {
         assertEquals("8.31446261815324", d("NA * kB"))
         assertTrue(d("hbar"), d("hbar").startsWith("1.05457181"))
         assertEquals("9.80665", d("g0"))
-        assertEquals(25, Constants.all.size)
+        assertEquals(48, Constants.all.size) // the 47 of the Casio fx-991EX list plus the Coulomb constant ke
         assertNotNull(Constants.find("kB"))
     }
 

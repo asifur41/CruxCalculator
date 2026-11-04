@@ -49,7 +49,18 @@ internal fun ConstantsPane(onUseInCalculator: (String) -> Unit, modifier: Modifi
             label = { Text("Search") },
             singleLine = true
         )
+        var lastGroup = ""
         items.forEach { c ->
+            if (c.group != lastGroup) {
+                lastGroup = c.group
+                Text(
+                    c.group,
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             Card(
                 modifier = Modifier.fillMaxWidth().clickable { onUseInCalculator(c.name) },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)

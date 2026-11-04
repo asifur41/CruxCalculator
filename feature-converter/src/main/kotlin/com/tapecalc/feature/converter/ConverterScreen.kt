@@ -388,8 +388,8 @@ private fun shortLabel(c: UnitCategory): String = when (c) {
 }
 
 /**
- * All unit categories plus "Number system" as a fixed grid: 5 columns, so the 13 entries
- * fill exactly 3 rows (5 + 5 + 3). Nothing scrolls sideways.
+ * All unit categories plus "Number system" as a fixed grid: 5 columns, so the 14 entries
+ * fill exactly 3 rows (5 + 5 + 4). Nothing scrolls sideways.
  */
 @Composable
 private fun CategoryGrid(
