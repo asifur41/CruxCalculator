@@ -27,3 +27,16 @@ growth is much smaller. Clearing storage or reinstalling shrinks it again; it is
 * Do it three times and ignore the first run after an install: Android is still compiling in the background then.
 * Smoothness: Settings > Developer options > "Profile HWUI rendering" (On screen as bars). Bars above the green line
   mean slow frames.
+
+## 4. The baseline profile (added in update 6b)
+A new app starts in a slow mode: Android runs its code step by step and compiles the parts you use later, while the
+phone is idle and charging. For an app installed from a downloaded file (no Play Store to supply a ready-made profile)
+that can take a day or two, so the first launches are slow and screens stutter. `app/src/main/baseline-prof.txt` tells
+Android to compile all of the app's own code straight away, and `androidx.profileinstaller` applies it at first launch.
+Compose and AndroidX bring their own profiles. A few percent more installed size is the price of the faster start.
+
+## 5. Where to look if the size still looks wrong
+Settings > Apps > Crux Calculator > Storage shows three numbers:
+* **App size**: the APK plus the compiled code Android makes from it. Grows once after installing, then stops.
+* **Data**: saved tape, variables, settings. Should be kilobytes to a few MB.
+* **Cache**: the app writes no cache files. If Data or Cache is large, that is a real problem: tell us the numbers.

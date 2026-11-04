@@ -89,8 +89,8 @@ Pushing to `main` starts the **Android Build** workflow automatically (also on p
 * First run takes about 8-15 minutes, later runs about 4-8 minutes.
 * When the run has a green check, scroll to **Artifacts** at the bottom of the run page and download:
   * `app-release-aab` -> `app-release.aab` (upload this to Google Play)
-  * `app-release-apk` -> `app-release.apk` (signed) or `app-release-unsigned.apk` (no signing secrets yet; cannot be installed)
-  * `app-debug-apk` -> `app-debug.apk` (**install this one on your phone to try the app**)
+  * `app-release-apk` -> `app-release.apk` (signed; **install this one on your phone to try the app**: it is the optimised build, the same as the Play Store version) or `app-release-unsigned.apk` (no signing secrets yet; cannot be installed)
+  * `app-debug-apk` -> `app-debug.apk` (for developers: debugging build, **slow and large on purpose**; it starts slower, scrolls and navigates less smoothly and grows to several times its size as the phone compiles it)
   * `test-reports` (HTML test results)
 
 ## 4. Run it in Codespace (optional)

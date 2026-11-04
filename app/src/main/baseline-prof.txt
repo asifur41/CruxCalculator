@@ -1,0 +1,12 @@
+# Baseline profile for Crux Calculator.
+#
+# Without a profile, a freshly installed app runs its own code in the slow "interpreter" until Android has watched
+# it for a while and compiled the parts you use. For an app installed from a downloaded file (not from the Play Store,
+# which hands the phone a ready-made profile) this takes hours or days, which is why the first launches are slow and
+# switching screens can stutter. This file tells the system up front: "compile all of the app's own code now".
+# The rules cover every module (core-math, core-data, core-ui, feature-*, app); all start with com/tapecalc.
+#
+# Format: H = hot (used often), S = used at startup, P = used just after startup, then the class and method pattern.
+# Compose and AndroidX libraries ship their own profiles, so only this app's code is listed here.
+HSPLcom/tapecalc/**;->**(**)**
+Lcom/tapecalc/**;

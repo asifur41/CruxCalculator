@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed (update 6: speed and size)
+* **Baseline profile** (`app/src/main/baseline-prof.txt`) + ProfileInstaller: all of the app's own code is compiled ahead
+  of time when the app is installed, so start-up and switching screens no longer depend on the phone "learning" the app.
+* README now says to install `app-release.apk` (optimised) instead of `app-debug.apk` (slow, large, grows after use).
+  See `docs/PERFORMANCE.md`.
+
 ### Changed (update 6)
 * The CI now builds an **installable, optimized release APK** (`app-release.apk`) signed with a public test key, so
   the real speed of the app can be tested. The debug APK is much slower and larger by design. Google Play builds are
