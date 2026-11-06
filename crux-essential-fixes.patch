@@ -1,0 +1,300 @@
+diff --git a/README.md b/README.md
+index 779df08..a4fd587 100644
+--- a/README.md
++++ b/README.md
+@@ -29,7 +29,7 @@ When possible, calculations retain exact fractions and repeating-decimal informa
+ 
+ ## Unit conversions
+ 
+-Convert between units in 12 categories, with around 100 units available. You can enter a conversion directly in an expression:
++Convert between units in 13 categories, with more than 100 units available. You can enter a conversion directly in an expression:
+ 
+ ```text
+ 12 km to mi
+@@ -39,6 +39,20 @@ Convert between units in 12 categories, with around 100 units available. You can
+ 
+ Conversions work offline. Currency conversion is not included.
+ 
++## Tools
++
++The **Tools** tab collects extra maths tools. Each one works offline and shows plain-language errors when the input does not make sense:
++
++- **Equations:** polynomial roots (up to degree 4), simultaneous equations (up to 4 unknowns), solve f(x) = 0.
++- **Calculus and algebra:** derivative at a point, definite integrals, sums and products; symbolic algebra (simplify, expand, factor, differentiate and integrate with letters) for expressions of moderate size.
++- **Statistics:** one-variable statistics, paired data with regression, and normal, binomial and Poisson distributions.
++- **Matrices, vectors and complex numbers:** matrix calculations (up to 6 × 6), eigenvalues and determinant (up to 4 × 4), 2D and 3D vectors, complex arithmetic.
++- **BASE-N (logic):** binary, octal, decimal and hex with and, or, xor, not and shifts.
++- **Step by step:** see an expression worked out one operation at a time.
++- **Graph:** plot up to three functions, pan, zoom, trace, and find roots and peaks.
++- **Constants:** a table of physical constants you can tap to use.
++- **QR code:** turn any text, result or equation into a QR code.
++
+ ## Calculation tape and variables
+ 
+ Your calculation tape keeps a chronological record of your work. Tap a line to edit it, or add labels, notes, and tags to make entries easier to find. You can search, pin, duplicate, delete, and export calculations. Use `ans` to refer to the previous result.
+@@ -66,7 +80,7 @@ CruxCalculator requires Android 8.0 (API 26) or later.
+ 
+ ## Not included
+ 
+-This version does not include graphing, currency conversion, complex numbers, matrices, symbolic algebra, or programmer-mode calculations.
++This version does not include currency conversion (it would need live exchange rates, and the app works offline), cloud sync, or accounts.
+ 
+ ## Need help?
+ 
+diff --git a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
+index 3e4603c..8eb1e24 100644
+--- a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
++++ b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
+@@ -15,11 +15,17 @@ object TapeRecalculator {
+     data class Outcome(val entries: List<HistoryEntry>, val changedVariables: Map<String, String>)
+ 
+     fun ansBefore(entries: List<HistoryEntry>, index: Int): CalcValue? {
++        val i = ansIndex(entries, index)
++        return if (i >= 0) CalcValue.deserialize(entries[i].resultValue) else null
++    }
++
++    /** Position of the entry that `ans` refers to for the entry at [index]: the nearest earlier one that has a result. */
++    private fun ansIndex(entries: List<HistoryEntry>, index: Int): Int {
+         for (i in index - 1 downTo 0) {
+             val e = entries[i]
+-            if (!e.isError && e.resultValue.isNotEmpty()) return CalcValue.deserialize(e.resultValue)
++            if (!e.isError && e.resultValue.isNotEmpty()) return i
+         }
+-        return null
++        return -1
+     }
+ 
+     /** Evaluates [expression] and returns a copy of [base] carrying the new result (or error). */
+@@ -91,38 +97,44 @@ object TapeRecalculator {
+         val changedVars = linkedMapOf<String, String>()
+         val result = entries.toMutableList()
+         val dirtyNames = mutableSetOf<String>()
++        // Positions of entries whose result (the value `ans` hands on) changed or is now unreliable.
++        val dirtyEntries = mutableSetOf<Int>()
+ 
+         val old = entries[index]
+         val expression = newExpression.trim()
+         val (updated, assignedValues) = evaluated(old, expression, ansBefore(result, index), vars, EntryStatus.OK, now)
+         result[index] = updated
+-        var ansDirty = resultChanged(old, updated) || old.expression != expression
++        val editChanged = resultChanged(old, updated) || old.expression != expression
++        if (editChanged) dirtyEntries += index
+         for ((name, value) in assignedValues) {
+             vars[name] = value
+             changedVars[name] = value.serialize()
+-            if (ansDirty) dirtyNames += name
++            if (editChanged) dirtyNames += name
+         }
+ 
+         for (j in index + 1 until result.size) {
+             val entry = result[j]
+             val analysis = Calculator.analyze(entry.expression)
++            // `ans` for this entry is the nearest earlier entry WITH a result. Entries that are errors do not
++            // produce one, so they must not reset the flag (an error between the edit and an `ans` user used to).
++            val ansOld = ansIndex(entries, j)
++            val ansNew = ansIndex(result, j)
++            val ansDirty = ansOld != ansNew || ansNew in dirtyEntries
+             val dependent = (analysis.usesAns && ansDirty) || analysis.referencedNames.any { it in dirtyNames }
+-            if (!dependent) {
+-                ansDirty = false
+-                continue
+-            }
++            if (!dependent) continue
+             if (autoRecalc) {
+                 val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
+                 result[j] = recomputed
+-                ansDirty = resultChanged(entry, recomputed)
++                val changed = resultChanged(entry, recomputed)
++                if (changed) dirtyEntries += j
+                 for ((name, value) in values) {
+                     vars[name] = value
+                     changedVars[name] = value.serialize()
+-                    if (ansDirty) dirtyNames += name
++                    if (changed) dirtyNames += name
+                 }
+             } else {
+                 result[j] = entry.copy(status = EntryStatus.STALE, updatedAt = now)
+-                ansDirty = true
++                dirtyEntries += j
+                 dirtyNames += analysis.assignedNames
+             }
+         }
+diff --git a/core-data/src/test/kotlin/com/tapecalc/core/data/TapeRecalculatorTest.kt b/core-data/src/test/kotlin/com/tapecalc/core/data/TapeRecalculatorTest.kt
+new file mode 100644
+index 0000000..6337693
+--- /dev/null
++++ b/core-data/src/test/kotlin/com/tapecalc/core/data/TapeRecalculatorTest.kt
+@@ -0,0 +1,81 @@
++package com.tapecalc.core.data
++
++import com.tapecalc.core.data.domain.EntryStatus
++import com.tapecalc.core.data.domain.HistoryEntry
++import com.tapecalc.core.data.domain.TapeRecalculator
++import com.tapecalc.core.math.Calculator
++import com.tapecalc.core.math.EvalContext
++import com.tapecalc.core.math.EvalOutcome
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++/** Editing a tape line must update, or flag, every later line that depends on it through `ans`. */
++class TapeRecalculatorTest {
++
++    /** Builds a tape the way the app does: each line is evaluated with `ans` = the last line that has a result. */
++    private fun tape(vararg expressions: String): List<HistoryEntry> {
++        val out = ArrayList<HistoryEntry>()
++        expressions.forEachIndexed { i, expr ->
++            val ans = TapeRecalculator.ansBefore(out, out.size)
++            val base = HistoryEntry(id = (i + 1).toLong(), workspaceId = 1, expression = expr)
++            val (entry, _) = TapeRecalculator.evaluated(base, expr, ans, emptyMap(), EntryStatus.OK, 0)
++            out += entry
++        }
++        return out
++    }
++
++    private fun List<HistoryEntry>.shown() = map { it.displayResult }
++
++    @Test
++    fun errorLineBetweenTheEditAndAnsUserDoesNotHideTheDependency() {
++        // line 3 is an error, so line 4's `ans` is line 2. Editing line 1 changes line 2, and so line 4.
++        val before = tape("10", "ans*2", "1/0", "ans+1")
++        assertEquals(listOf("10", "20", "Division by zero", "21"), before.shown())
++
++        val after = TapeRecalculator.edit(before, 1, "100", emptyMap(), autoRecalc = true, now = 1).entries
++        assertEquals(listOf("100", "200", "Division by zero", "201"), after.shown())
++        assertEquals(EntryStatus.UPDATED, after[3].status)
++    }
++
++    @Test
++    fun withAutoRecalcOffTheLineBehindAnErrorIsMarkedStale() {
++        val before = tape("10", "ans*2", "1/0", "ans+1")
++        val after = TapeRecalculator.edit(before, 1, "100", emptyMap(), autoRecalc = false, now = 1).entries
++        assertEquals(EntryStatus.STALE, after[1].status)
++        assertEquals(EntryStatus.OK, after[2].status)      // the error line does not use ans
++        assertEquals(EntryStatus.STALE, after[3].status)   // but the line after it still depends on line 2
++
++        val fixed = TapeRecalculator.recalculateStale(after, emptyMap(), now = 2).entries
++        assertEquals(listOf("100", "200", "Division by zero", "201"), fixed.shown())
++    }
++
++    @Test
++    fun aLineWithItsOwnResultStillStopsTheChain() {
++        // line 3 has a result of its own, so line 4 uses line 3 and is NOT affected by the edit
++        val before = tape("10", "ans*2", "5+5", "ans+1")
++        val after = TapeRecalculator.edit(before, 1, "100", emptyMap(), autoRecalc = true, now = 1).entries
++        assertEquals(listOf("100", "200", "10", "11"), after.shown())
++        assertEquals(EntryStatus.OK, after[3].status)
++    }
++
++    @Test
++    fun editingALineIntoAnErrorRedirectsLaterAnsToTheEarlierLine() {
++        // line 2 becomes an error, so line 3's `ans` is now line 1 (10), not line 2 (20)
++        val before = tape("10", "ans*2", "ans+1")
++        assertEquals(listOf("10", "20", "21"), before.shown())
++        val after = TapeRecalculator.edit(before, 2, "1/0", emptyMap(), autoRecalc = true, now = 1).entries
++        assertEquals(listOf("10", "Division by zero", "11"), after.shown())
++        assertEquals(EntryStatus.UPDATED, after[2].status)
++    }
++
++    @Test
++    fun variablesStillPropagate() {
++        val before = tape("rate = 2", "10 * rate")
++        val out = TapeRecalculator.edit(before, 1, "rate = 3", mapOf("rate" to evalValue("2")), autoRecalc = true, now = 1)
++        assertEquals(listOf("3", "30"), out.entries.shown())
++        assertEquals(EntryStatus.UPDATED, out.entries[1].status)
++    }
++
++    private fun evalValue(expr: String) =
++        ((Calculator.evaluate(expr, EvalContext()) as EvalOutcome.Success).result.value)
++}
+diff --git a/core-math/src/test/kotlin/com/tapecalc/core/math/HugeNumberTest.kt b/core-math/src/test/kotlin/com/tapecalc/core/math/HugeNumberTest.kt
+new file mode 100644
+index 0000000..ca18c19
+--- /dev/null
++++ b/core-math/src/test/kotlin/com/tapecalc/core/math/HugeNumberTest.kt
+@@ -0,0 +1,43 @@
++package com.tapecalc.core.math
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** A number with a gigantic exponent must be refused at once, not expanded into millions of digits first. */
++class HugeNumberTest {
++
++    private fun failureKind(expr: String): ErrorKind {
++        val o = Calculator.evaluate(expr)
++        assertTrue("'$expr' should fail but gave $o", o is EvalOutcome.Failure)
++        return (o as EvalOutcome.Failure).error.kind
++    }
++
++    private fun value(expr: String): String {
++        val o = Calculator.evaluate(expr)
++        assertTrue("'$expr' failed: $o", o is EvalOutcome.Success)
++        return (o as EvalOutcome.Success).result.display
++    }
++
++    @Test(timeout = 3_000)
++    fun hugeExponentsFailAtOnce() {
++        assertEquals(ErrorKind.OVERFLOW, failureKind("1e100000000"))
++        assertEquals(ErrorKind.OVERFLOW, failureKind("1e10000000"))
++        assertEquals(ErrorKind.UNDERFLOW, failureKind("1e-100000000"))
++        assertEquals(ErrorKind.SYNTAX, failureKind("1e99999999999"))
++        for (e in listOf("2*1e100000000", "sin(1e100000000)", "sum(1e100000000,k,1,3)", "5 km to mi + 1e100000000")) {
++            assertTrue("'$e' should fail quickly", Calculator.evaluate(e) is EvalOutcome.Failure)
++        }
++    }
++
++    @Test
++    fun numbersInsideTheRangeStillWork() {
++        assertEquals("200000", value("2e5"))
++        assertEquals("0.0025", value("2.5e-3"))
++        assertEquals("1E9999", value("1e9999"))
++        assertEquals("1E-9999", value("1e-9999"))
++        assertEquals("0", value("0e100000000"))
++        assertEquals(ErrorKind.OVERFLOW, failureKind("1e10000"))
++        assertEquals(ErrorKind.UNDERFLOW, failureKind("1e-10000"))
++    }
++}
+diff --git a/core-precision/src/main/kotlin/com/tapecalc/core/precision/Rational.kt b/core-precision/src/main/kotlin/com/tapecalc/core/precision/Rational.kt
+index 753240d..5c5a3cb 100644
+--- a/core-precision/src/main/kotlin/com/tapecalc/core/precision/Rational.kt
++++ b/core-precision/src/main/kotlin/com/tapecalc/core/precision/Rational.kt
+@@ -135,14 +135,36 @@ class Rational private constructor(val num: BigInteger, val den: BigInteger) : C
+ 
+         fun of(value: BigInteger): Rational = Rational(value, BigInteger.ONE)
+ 
++        /**
++         * Largest |scale| accepted by [fromBigDecimal]. Values inside the calculator's range
++         * (about 1e±9999, 40 digits) never come close; the limit only stops a crafted scale such as
++         * 1e100000000 from asking for a ten-million-digit integer.
++         */
++        private const val MAX_SCALE = 100_000
++
+         fun fromBigDecimal(value: BigDecimal): Rational {
+             val unscaled = value.unscaledValue()
+             val scale = value.scale()
++            if (unscaled.signum() == 0) return ZERO
++            if (scale > MAX_SCALE) throw UnderflowException("Underflow")
++            if (scale < -MAX_SCALE) throw OverflowException("Overflow")
+             return if (scale >= 0) of(unscaled, BigInteger.TEN.pow(scale))
+             else of(unscaled * BigInteger.TEN.pow(-scale), BigInteger.ONE)
+         }
+ 
+-        /** Parses a plain decimal string such as "12.5" exactly. */
+-        fun parse(text: String): Rational = fromBigDecimal(BigDecimal(text))
++        /**
++         * Parses a plain decimal string such as "12.5" exactly. The size of the number is checked
++         * BEFORE it is expanded into a big integer, so "1e100000000" fails at once with
++         * [OverflowException] (or [UnderflowException] for "1e-100000000") instead of spending
++         * seconds building a huge number.
++         */
++        fun parse(text: String): Rational {
++            val value = BigDecimal(text)
++            if (value.signum() == 0) return ZERO
++            val adjusted = value.precision().toLong() - value.scale() - 1
++            if (adjusted > Precision.MAX_EXPONENT) throw OverflowException("Overflow")
++            if (adjusted < Precision.MIN_EXPONENT) throw UnderflowException("Underflow")
++            return fromBigDecimal(value)
++        }
+     }
+ }

@@ -15,11 +15,17 @@ object TapeRecalculator {
     data class Outcome(val entries: List<HistoryEntry>, val changedVariables: Map<String, String>)
 
     fun ansBefore(entries: List<HistoryEntry>, index: Int): CalcValue? {
+        val i = ansIndex(entries, index)
+        return if (i >= 0) CalcValue.deserialize(entries[i].resultValue) else null
+    }
+
+    /** Position of the entry that `ans` refers to for the entry at [index]: the nearest earlier one that has a result. */
+    private fun ansIndex(entries: List<HistoryEntry>, index: Int): Int {
         for (i in index - 1 downTo 0) {
             val e = entries[i]
-            if (!e.isError && e.resultValue.isNotEmpty()) return CalcValue.deserialize(e.resultValue)
+            if (!e.isError && e.resultValue.isNotEmpty()) return i
         }
-        return null
+        return -1
     }
 
     /** Evaluates [expression] and returns a copy of [base] carrying the new result (or error). */
@@ -91,38 +97,44 @@ object TapeRecalculator {
         val changedVars = linkedMapOf<String, String>()
         val result = entries.toMutableList()
         val dirtyNames = mutableSetOf<String>()
+        // Positions of entries whose result (the value `ans` hands on) changed or is now unreliable.
+        val dirtyEntries = mutableSetOf<Int>()
 
         val old = entries[index]
         val expression = newExpression.trim()
         val (updated, assignedValues) = evaluated(old, expression, ansBefore(result, index), vars, EntryStatus.OK, now)
         result[index] = updated
-        var ansDirty = resultChanged(old, updated) || old.expression != expression
+        val editChanged = resultChanged(old, updated) || old.expression != expression
+        if (editChanged) dirtyEntries += index
         for ((name, value) in assignedValues) {
             vars[name] = value
             changedVars[name] = value.serialize()
-            if (ansDirty) dirtyNames += name
+            if (editChanged) dirtyNames += name
         }
 
         for (j in index + 1 until result.size) {
             val entry = result[j]
             val analysis = Calculator.analyze(entry.expression)
+            // `ans` for this entry is the nearest earlier entry WITH a result. Entries that are errors do not
+            // produce one, so they must not reset the flag (an error between the edit and an `ans` user used to).
+            val ansOld = ansIndex(entries, j)
+            val ansNew = ansIndex(result, j)
+            val ansDirty = ansOld != ansNew || ansNew in dirtyEntries
             val dependent = (analysis.usesAns && ansDirty) || analysis.referencedNames.any { it in dirtyNames }
-            if (!dependent) {
-                ansDirty = false
-                continue
-            }
+            if (!dependent) continue
             if (autoRecalc) {
                 val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
                 result[j] = recomputed
-                ansDirty = resultChanged(entry, recomputed)
+                val changed = resultChanged(entry, recomputed)
+                if (changed) dirtyEntries += j
                 for ((name, value) in values) {
                     vars[name] = value
                     changedVars[name] = value.serialize()
-                    if (ansDirty) dirtyNames += name
+                    if (changed) dirtyNames += name
                 }
             } else {
                 result[j] = entry.copy(status = EntryStatus.STALE, updatedAt = now)
-                ansDirty = true
+                dirtyEntries += j
                 dirtyNames += analysis.assignedNames
             }
         }

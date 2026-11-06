@@ -29,7 +29,7 @@ When possible, calculations retain exact fractions and repeating-decimal informa
 
 ## Unit conversions
 
-Convert between units in 12 categories, with around 100 units available. You can enter a conversion directly in an expression:
+Convert between units in 13 categories, with more than 100 units available. You can enter a conversion directly in an expression:
 
 ```text
 12 km to mi
@@ -38,6 +38,20 @@ Convert between units in 12 categories, with around 100 units available. You can
 ```
 
 Conversions work offline. Currency conversion is not included.
+
+## Tools
+
+The **Tools** tab collects extra maths tools. Each one works offline and shows plain-language errors when the input does not make sense:
+
+- **Equations:** polynomial roots (up to degree 4), simultaneous equations (up to 4 unknowns), solve f(x) = 0.
+- **Calculus and algebra:** derivative at a point, definite integrals, sums and products; symbolic algebra (simplify, expand, factor, differentiate and integrate with letters) for expressions of moderate size.
+- **Statistics:** one-variable statistics, paired data with regression, and normal, binomial and Poisson distributions.
+- **Matrices, vectors and complex numbers:** matrix calculations (up to 6 × 6), eigenvalues and determinant (up to 4 × 4), 2D and 3D vectors, complex arithmetic.
+- **BASE-N (logic):** binary, octal, decimal and hex with and, or, xor, not and shifts.
+- **Step by step:** see an expression worked out one operation at a time.
+- **Graph:** plot up to three functions, pan, zoom, trace, and find roots and peaks.
+- **Constants:** a table of physical constants you can tap to use.
+- **QR code:** turn any text, result or equation into a QR code.
 
 ## Calculation tape and variables
 
@@ -66,7 +80,7 @@ CruxCalculator requires Android 8.0 (API 26) or later.
 
 ## Not included
 
-This version does not include graphing, currency conversion, complex numbers, matrices, symbolic algebra, or programmer-mode calculations.
+This version does not include currency conversion (it would need live exchange rates, and the app works offline), cloud sync, or accounts.
 
 ## Need help?
 

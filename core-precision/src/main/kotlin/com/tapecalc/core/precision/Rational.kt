@@ -135,14 +135,36 @@ class Rational private constructor(val num: BigInteger, val den: BigInteger) : C
 
         fun of(value: BigInteger): Rational = Rational(value, BigInteger.ONE)
 
+        /**
+         * Largest |scale| accepted by [fromBigDecimal]. Values inside the calculator's range
+         * (about 1e±9999, 40 digits) never come close; the limit only stops a crafted scale such as
+         * 1e100000000 from asking for a ten-million-digit integer.
+         */
+        private const val MAX_SCALE = 100_000
+
         fun fromBigDecimal(value: BigDecimal): Rational {
             val unscaled = value.unscaledValue()
             val scale = value.scale()
+            if (unscaled.signum() == 0) return ZERO
+            if (scale > MAX_SCALE) throw UnderflowException("Underflow")
+            if (scale < -MAX_SCALE) throw OverflowException("Overflow")
             return if (scale >= 0) of(unscaled, BigInteger.TEN.pow(scale))
             else of(unscaled * BigInteger.TEN.pow(-scale), BigInteger.ONE)
         }
 
-        /** Parses a plain decimal string such as "12.5" exactly. */
-        fun parse(text: String): Rational = fromBigDecimal(BigDecimal(text))
+        /**
+         * Parses a plain decimal string such as "12.5" exactly. The size of the number is checked
+         * BEFORE it is expanded into a big integer, so "1e100000000" fails at once with
+         * [OverflowException] (or [UnderflowException] for "1e-100000000") instead of spending
+         * seconds building a huge number.
+         */
+        fun parse(text: String): Rational {
+            val value = BigDecimal(text)
+            if (value.signum() == 0) return ZERO
+            val adjusted = value.precision().toLong() - value.scale() - 1
+            if (adjusted > Precision.MAX_EXPONENT) throw OverflowException("Overflow")
+            if (adjusted < Precision.MIN_EXPONENT) throw UnderflowException("Underflow")
+            return fromBigDecimal(value)
+        }
     }
 }
