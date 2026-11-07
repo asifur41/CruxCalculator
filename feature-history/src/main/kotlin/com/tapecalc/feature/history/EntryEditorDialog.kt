@@ -1,5 +1,6 @@
 package com.tapecalc.feature.history
 
+import com.tapecalc.core.ui.ExpressionField
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -75,11 +76,12 @@ fun EntryEditorDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
+                ExpressionField(
                     value = expression,
                     onValueChange = { expression = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Expression") }
+                    label = "Expression",
+                    singleLine = false
                 )
                 Text(
                     text = livePreview.text,

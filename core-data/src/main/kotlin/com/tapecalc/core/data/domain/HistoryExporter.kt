@@ -12,7 +12,8 @@ object HistoryExporter {
         ExportFormat.SHARE -> share(workspaceName, entries)
     }
 
-    private fun line(e: HistoryEntry): String = "${e.expression} = ${e.displayResult}"
+    private fun line(e: HistoryEntry): String =
+        if (e.isTool) "${e.expression} -> ${e.displayResult}" else "${e.expression} = ${e.displayResult}"
 
     private fun plain(workspace: String, entries: List<HistoryEntry>): String = buildString {
         val header = "CruxCalculator - $workspace"
@@ -68,7 +69,7 @@ object HistoryExporter {
             append('\n')
             if (!e.label.isNullOrBlank()) append(e.label).append('\n')
             append("  ").append(e.expression).append('\n')
-            append("  = ").append(e.displayResult).append('\n')
+            append(if (e.isTool) "  -> " else "  = ").append(e.displayResult).append('\n')
             if (!e.note.isNullOrBlank()) append("  (").append(e.note).append(")\n")
         }
         append("\nCalculated offline with CruxCalculator")

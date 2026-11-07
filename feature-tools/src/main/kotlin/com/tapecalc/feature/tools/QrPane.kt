@@ -17,8 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.tapecalc.core.ui.rememberStoredInt
+import com.tapecalc.core.ui.setValue
+import com.tapecalc.core.ui.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -35,7 +37,7 @@ import com.tapecalc.core.math.qr.QrMatrix
  */
 @Composable
 internal fun QrPane(text: String, onTextChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    var eccIndex by rememberSaveable { mutableStateOf(1) }
+    var eccIndex by rememberStoredInt("tool.qr.ecc", 1)
     val ecc = if (eccIndex == 0) QrEcc.L else QrEcc.M
     val clipboard = LocalClipboardManager.current
 

@@ -23,7 +23,7 @@ object TapeRecalculator {
     private fun ansIndex(entries: List<HistoryEntry>, index: Int): Int {
         for (i in index - 1 downTo 0) {
             val e = entries[i]
-            if (!e.isError && e.resultValue.isNotEmpty()) return i
+            if (!e.isError && !e.isTool && e.resultValue.isNotEmpty()) return i
         }
         return -1
     }
@@ -114,6 +114,7 @@ object TapeRecalculator {
 
         for (j in index + 1 until result.size) {
             val entry = result[j]
+            if (entry.isTool) continue
             val analysis = Calculator.analyze(entry.expression)
             // `ans` for this entry is the nearest earlier entry WITH a result. Entries that are errors do not
             // produce one, so they must not reset the flag (an error between the edit and an `ans` user used to).
@@ -152,7 +153,7 @@ object TapeRecalculator {
         val result = entries.toMutableList()
         for (j in result.indices) {
             val entry = result[j]
-            if (entry.status != EntryStatus.STALE) continue
+            if (entry.isTool || entry.status != EntryStatus.STALE) continue
             val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
             result[j] = recomputed
             for ((name, value) in values) {

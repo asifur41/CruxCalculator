@@ -1,5 +1,6 @@
 package com.tapecalc.pro.ui
 
+import com.tapecalc.core.ui.ExpressionField
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,12 +47,13 @@ fun TypeExpressionDialog(initial: String, onCalculate: (String) -> Unit, onDismi
         title = { Text("Type an expression") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                ExpressionField(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Expression") },
-                    placeholder = { Text("12 km to mi") }
+                    label = "Expression",
+                    placeholder = "12 km to mi",
+                    singleLine = false
                 )
                 Text(
                     "Examples:\n• 12 km to mi     • 5 kg to lb     • 72 F to C\n• rate = 0.18      • 200 * rate\n• sin(30) + 2^8    • 1200 + 15%",

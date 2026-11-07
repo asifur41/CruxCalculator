@@ -47,6 +47,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import com.tapecalc.core.ui.getValue
+import com.tapecalc.core.ui.rememberStoredEnum
+import com.tapecalc.core.ui.rememberStoredInt
+import com.tapecalc.core.ui.rememberStoredText
+import com.tapecalc.core.ui.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -229,19 +234,21 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     var showTypeDialog by rememberSaveable { mutableStateOf(false) }
     var showWorkspaces by rememberSaveable { mutableStateOf(false) }
     var replayTutorial by rememberSaveable { mutableStateOf(false) }
-    var calcMode by rememberSaveable { mutableStateOf(0) } // two-pane: 0 = basic, 1 = scientific
-    var sidePane by rememberSaveable { mutableStateOf(SidePane.TAPE) }
-    var historySection by rememberSaveable { mutableStateOf(HistorySection.TAPE) }
+    // Where the person was is kept on the device (not only in memory), so leaving the app, or closing it, and coming
+    // back puts them exactly where they were.
+    var calcMode by rememberStoredInt("nav.calcMode", 0) // two-pane: 0 = basic, 1 = scientific
+    var sidePane by rememberStoredEnum("nav.sidePane", SidePane.entries.toTypedArray(), SidePane.TAPE)
+    var historySection by rememberStoredEnum("nav.historySection", HistorySection.entries.toTypedArray(), HistorySection.TAPE)
     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
     // Kept here (not inside the phone layout) so the selected tab survives opening Settings.
     // There is no swipe between tabs any more: the bottom bar is the only way to switch, and only the selected
     // tab is built, which keeps typing and scrolling light.
-    var selectedTab by rememberSaveable { mutableStateOf(Tab.BASIC.ordinal) }
+    var selectedTab by rememberStoredInt("nav.tab", Tab.BASIC.ordinal)
     val tabStates = rememberSaveableStateHolder()
-    // Which tool is open on the Tools tab, and the QR text. Plain `remember`, not saved: the Tools tab must always
-    // open on its list, so the QR screen (and its text box) only appears after tapping the QR code button.
-    var toolsCurrent by remember { mutableStateOf("") }
-    var qrText by remember { mutableStateOf("") }
+    // Which tool is open on the Tools tab, and the QR text. Both are remembered on the device: coming back to the app
+    // (or switching tabs and returning) shows the same tool with the same values, never the list with the work gone.
+    var toolsCurrent by rememberStoredText("nav.tool", "")
+    var qrText by rememberStoredText("nav.qrText", "")
     var showMode by remember { mutableStateOf(false) }
     var calcPrompt by remember { mutableStateOf<List<String>?>(null) }
 
@@ -266,13 +273,11 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     val selectTab: (Tab) -> Unit = remember(dropFocus) {
         { tab ->
             dropFocus()
-            if (tab != Tab.TOOLS) toolsCurrent = ""
             selectedTab = tab.ordinal
         }
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         dropFocus()
-        toolsCurrent = "" // coming back to the app, Tools starts at its list again
     }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { dropFocus() }
     LaunchedEffect(selectedTab) { dropFocus() }
@@ -492,11 +497,12 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                                     )
                                     SidePane.TOOLS -> ToolsScreen(
                                         angleMode = AngleMode.fromName(settings.angleMode),
-                                        current = toolsCurrent,
+                                        currentTool = toolsCurrent,
                                         onCurrentChange = { toolsCurrent = it },
                                         qrText = qrText,
                                         onQrTextChange = { qrText = it },
                                         onUseInCalculator = { viewModel.submitText(it) },
+                                        onSaveToTape = viewModel::saveToolResult,
                                         modifier = Modifier.weight(1f)
                                     )
                                     SidePane.SETTINGS -> SettingsScreen(
@@ -550,11 +556,12 @@ fun AppRoot(viewModel: CalculatorViewModel) {
                                         Tab.CONVERT -> ConverterScreen(onUseInCalculator = useInCalculator)
                                         Tab.TOOLS -> ToolsScreen(
                                             angleMode = AngleMode.fromName(settings.angleMode),
-                                            current = toolsCurrent,
+                                            currentTool = toolsCurrent,
                                             onCurrentChange = { toolsCurrent = it },
                                             qrText = qrText,
                                             onQrTextChange = { qrText = it },
-                                            onUseInCalculator = useInCalculator
+                                            onUseInCalculator = useInCalculator,
+                                            onSaveToTape = viewModel::saveToolResult
                                         )
                                         Tab.TAPE -> HistoryTab(
                                             viewModel, historySection, { historySection = it }, settings.groupDigits, historyActions

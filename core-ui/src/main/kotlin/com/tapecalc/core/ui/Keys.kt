@@ -133,18 +133,25 @@ fun KeyButton(
     alphaHint: String? = null,
     /** Draws the key in the accent colour (SHIFT / ALPHA / HYP while they are switched on). */
     highlighted: Boolean = false,
-    minHeight: Dp = 48.dp
+    minHeight: Dp = 48.dp,
+    /**
+     * Hides every small label (SHIFT, ALPHA and long-press hints). The scientific keypad turns this on while SHIFT,
+     * ALPHA or HYP is active, so only the layer that is in use is drawn, in the large size.
+     */
+    hideHints: Boolean = false
 ) {
     val look = LocalCalcLook.current
     val c = look.colors
-    val (rawContainer, rawContent) = when (spec.kind) {
-        KeyKind.DIGIT -> c.digitKey to c.digitText
-        KeyKind.OPERATOR -> c.operatorKey to c.operatorText
-        KeyKind.FUNCTION -> c.functionKey to c.functionText
-        KeyKind.EQUALS -> c.equalsKey to c.equalsText
+    // AC and delete are drawn like "=": filled with the theme colour.
+    val filledLikeEquals = spec.kind == KeyKind.EQUALS || spec.action == KeyAction.AllClear || spec.action == KeyAction.Backspace
+    val (rawContainer, rawContent) = when {
+        filledLikeEquals -> c.equalsKey to c.equalsText
+        spec.kind == KeyKind.DIGIT -> c.digitKey to c.digitText
+        spec.kind == KeyKind.OPERATOR -> c.operatorKey to c.operatorText
+        else -> c.functionKey to c.functionText
     }
     val style = look.keypadStyle
-    val isEquals = spec.kind == KeyKind.EQUALS
+    val isEquals = filledLikeEquals
     val container: Color = when {
         highlighted -> MaterialTheme.colorScheme.primary
         isEquals || style == KeypadStyle.FILLED -> rawContainer
@@ -187,7 +194,7 @@ fun KeyButton(
             softWrap = false,
             textAlign = TextAlign.Center
         )
-        if (spec.hint != null && alphaHint == null) {
+        if (!hideHints && spec.hint != null && alphaHint == null) {
             Text(
                 text = spec.hint,
                 color = content.copy(alpha = 0.6f),
@@ -199,7 +206,7 @@ fun KeyButton(
                     .clearAndSetSemantics { }
             )
         }
-        if (shiftHint != null) {
+        if (!hideHints && shiftHint != null) {
             Text(
                 text = shiftHint,
                 color = c.accent,
@@ -212,7 +219,7 @@ fun KeyButton(
                     .clearAndSetSemantics { }
             )
         }
-        if (alphaHint != null) {
+        if (!hideHints && alphaHint != null) {
             Text(
                 text = alphaHint,
                 color = MaterialTheme.colorScheme.tertiary,

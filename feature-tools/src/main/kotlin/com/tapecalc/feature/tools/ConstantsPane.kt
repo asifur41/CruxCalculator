@@ -17,8 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.tapecalc.core.ui.rememberStoredText
+import com.tapecalc.core.ui.setValue
+import com.tapecalc.core.ui.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +31,7 @@ import com.tapecalc.core.precision.NumberFormatter
 /** The built-in constants table. Tap a row to put the constant into the calculator. */
 @Composable
 internal fun ConstantsPane(onUseInCalculator: (String) -> Unit, modifier: Modifier = Modifier) {
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by rememberStoredText("tool.constants.query", "")
     val items = remember(query) {
         val q = query.trim().lowercase()
         Constants.all.filter {

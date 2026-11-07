@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,10 +70,13 @@ import androidx.compose.ui.unit.sp
 import com.tapecalc.core.math.AngleMode
 import com.tapecalc.core.math.EvalContext
 import com.tapecalc.core.math.tools.ResultLine
+import com.tapecalc.core.math.tools.ToolHistory
 import com.tapecalc.core.math.tools.ToolInput
 import com.tapecalc.core.math.tools.ToolResult
 import com.tapecalc.core.math.tools.ToolSpec
 import com.tapecalc.core.math.tools.Tools
+import com.tapecalc.core.ui.ExpressionField
+import com.tapecalc.core.ui.LocalToolStateStore
 
 private const val GRAPH_ID = "graph"
 private const val CONSTANTS_ID = "constants"
@@ -119,15 +123,19 @@ private val hubEntries: List<HubEntry> =
 @Composable
 fun ToolsScreen(
     angleMode: AngleMode,
-    /** The id of the open tool, or "" for the list. Kept by the caller so it is never restored by itself. */
-    current: String,
+    /** The id of the open tool, or "" for the list. The caller keeps it on the device so it is still open when the person returns. */
+    currentTool: String,
     onCurrentChange: (String) -> Unit,
     qrText: String,
     onQrTextChange: (String) -> Unit,
     onUseInCalculator: (String) -> Unit,
+    /** Called with (tool title, what was entered, result on one line, result one value per line) after each calculation. */
+    onSaveToTape: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val ctx = remember(angleMode) { EvalContext(angleMode = angleMode) }
+    // A remembered id that no longer exists (after an update) just shows the list.
+    val current = if (hubEntries.any { it.id == currentTool }) currentTool else ""
 
     // The graph takes the whole area (no title bar, no padding); it has its own back button.
     if (current == GRAPH_ID) {
@@ -163,6 +171,7 @@ fun ToolsScreen(
                             ctx = ctx,
                             onUseInCalculator = onUseInCalculator,
                             onMakeQr = { onQrTextChange(it); onCurrentChange(QR_ID) },
+                            onSaveToTape = onSaveToTape,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -215,23 +224,50 @@ private fun ToolsHub(onOpen: (String) -> Unit) {
     }
 }
 
-/** Draws any [ToolSpec]: its text boxes, its chips, a Calculate button and the answer. */
+/**
+ * Draws any [ToolSpec]: its text boxes, its chips, a Calculate button and the answer.
+ *
+ * Everything the person typed or picked, and whether an answer was showing, is kept on the device as it changes, so a
+ * tool comes back exactly as it was left: after switching tabs, leaving the app, or closing it. Every successful
+ * Calculate is also written to the tape.
+ */
 @Composable
 private fun FormTool(
     spec: ToolSpec,
     ctx: EvalContext,
     onUseInCalculator: (String) -> Unit,
     onMakeQr: (String) -> Unit,
+    onSaveToTape: (String, String, String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val texts = remember(spec.id) {
-        mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.id, it.default) } }
+    val store = LocalToolStateStore.current
+    val textKey = { fieldId: String -> "tool.${spec.id}.t.$fieldId" }
+    val choiceKey = { optionId: String -> "tool.${spec.id}.c.$optionId" }
+    val ranKey = "tool.${spec.id}.ran"
+
+    val texts = remember(spec.id, store) {
+        mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.id, store.get(textKey(it.id)) ?: it.default) } }
     }
-    val choices = remember(spec.id) {
-        mutableStateMapOf<String, Int>().apply { spec.options.forEach { put(it.id, it.default) } }
+    val choices = remember(spec.id, store) {
+        mutableStateMapOf<String, Int>().apply {
+            spec.options.forEach { put(it.id, store.get(choiceKey(it.id))?.toIntOrNull()?.takeIf { i -> i in it.choices.indices } ?: it.default) }
+        }
     }
     var result by remember(spec.id) { mutableStateOf<ToolResult?>(null) }
     val clipboard = LocalClipboardManager.current
+
+    fun compute(): ToolResult = try {
+        spec.run(ToolInput(texts.toMap(), choices.toMap(), ctx))
+    } catch (e: Exception) {
+        ToolResult.Err("Could not work that out. Please check the input.")
+    } catch (e: StackOverflowError) {
+        ToolResult.Err("That input is too complicated.")
+    }
+
+    // Coming back to a tool that was showing an answer: work the answer out again from the saved boxes.
+    LaunchedEffect(spec.id, store) {
+        if (store.get(ranKey) == "1") result = compute()
+    }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
@@ -252,7 +288,12 @@ private fun FormTool(
                 option.choices.forEachIndexed { index, label ->
                     FilterChip(
                         selected = (choices[option.id] ?: option.default) == index,
-                        onClick = { choices[option.id] = index; result = null },
+                        onClick = {
+                            choices[option.id] = index
+                            store.put(choiceKey(option.id), index.toString())
+                            store.put(ranKey, null)
+                            result = null
+                        },
                         label = { Text(label) }
                     )
                 }
@@ -260,12 +301,16 @@ private fun FormTool(
         }
 
         spec.fields.forEach { field ->
-            OutlinedTextField(
+            ExpressionField(
                 value = texts[field.id] ?: "",
-                onValueChange = { texts[field.id] = it.take(600) },
+                onValueChange = {
+                    val v = it.take(600)
+                    texts[field.id] = v
+                    store.put(textKey(field.id), v)
+                },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(field.label) },
-                placeholder = { if (field.hint.isNotEmpty()) Text(field.hint) },
+                label = field.label,
+                placeholder = field.hint.ifEmpty { null },
                 singleLine = !field.multiline,
                 minLines = if (field.multiline) 3 else 1,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
@@ -274,12 +319,12 @@ private fun FormTool(
 
         Button(
             onClick = {
-                result = try {
-                    spec.run(ToolInput(texts.toMap(), choices.toMap(), ctx))
-                } catch (e: Exception) {
-                    ToolResult.Err("Could not work that out. Please check the input.")
-                } catch (e: StackOverflowError) {
-                    ToolResult.Err("That input is too complicated.")
+                val computed = compute()
+                result = computed
+                store.put(ranKey, "1")
+                // every successful calculation is also written to the tape
+                ToolHistory.record(spec, texts.toMap(), choices.toMap(), computed)?.let {
+                    onSaveToTape(spec.title, it.input, it.summary, it.full)
                 }
             },
             modifier = Modifier.fillMaxWidth()

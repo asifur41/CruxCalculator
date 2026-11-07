@@ -6,6 +6,13 @@ import com.tapecalc.core.math.EvalResult
 
 data class Workspace(val id: Long, val name: String, val sortOrder: Int)
 
+/**
+ * Stored in [HistoryEntry.resultValue] of an entry that was saved from a tool (polynomial roots, statistics, matrices...)
+ * rather than calculated on the keypad. Such an entry is only a record: `ans` skips it and the recalculation of the tape
+ * leaves it alone.
+ */
+const val TOOL_RESULT_MARKER = "tool-result"
+
 /** OK = up to date, STALE = depends on something that was edited, UPDATED = recalculated after an edit. */
 enum class EntryStatus {
     OK, STALE, UPDATED;
@@ -38,6 +45,10 @@ data class HistoryEntry(
     val createdAt: Long = 0,
     val updatedAt: Long = 0
 ) {
+    /** True for a record saved from the Tools tab. */
+    val isTool: Boolean
+        get() = resultValue == TOOL_RESULT_MARKER
+
     /** What the tape shows after the equals sign. */
     val displayResult: String
         get() = when {
