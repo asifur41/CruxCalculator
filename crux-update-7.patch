@@ -1,0 +1,1916 @@
+diff --git a/app/src/main/kotlin/com/tapecalc/pro/MainActivity.kt b/app/src/main/kotlin/com/tapecalc/pro/MainActivity.kt
+index 23db3e9..151b888 100644
+--- a/app/src/main/kotlin/com/tapecalc/pro/MainActivity.kt
++++ b/app/src/main/kotlin/com/tapecalc/pro/MainActivity.kt
+@@ -8,15 +8,19 @@ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+ import androidx.activity.viewModels
+ import androidx.compose.material3.MaterialTheme
++import androidx.compose.runtime.CompositionLocalProvider
+ import androidx.compose.runtime.SideEffect
++import androidx.compose.runtime.remember
+ import androidx.compose.runtime.getValue
+ import androidx.compose.ui.graphics.toArgb
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import com.tapecalc.core.data.settings.AppSettings
+ import com.tapecalc.core.ui.ButtonShape
+ import com.tapecalc.core.ui.KeypadStyle
++import com.tapecalc.core.ui.LocalToolStateStore
+ import com.tapecalc.core.ui.ThemeSettings
+ import com.tapecalc.core.ui.TapeTheme
++import com.tapecalc.pro.ui.PrefsToolStateStore
+ import com.tapecalc.core.ui.resolveTheme
+ import com.tapecalc.pro.presentation.CalculatorViewModel
+ import com.tapecalc.pro.ui.AppRoot
+@@ -55,7 +59,11 @@ class MainActivity : ComponentActivity() {
+                 // Keep the window the same colour as the app so nothing can show through during transitions.
+                 val background = MaterialTheme.colorScheme.background.toArgb()
+                 SideEffect { window.setBackgroundDrawable(ColorDrawable(background)) }
+-                AppRoot(viewModel)
++                // what the person typed in the tools, and which screen they were on, is kept on the device
++                val stateStore = remember { PrefsToolStateStore(applicationContext) }
++                CompositionLocalProvider(LocalToolStateStore provides stateStore) {
++                    AppRoot(viewModel)
++                }
+             }
+         }
+     }
+diff --git a/app/src/main/kotlin/com/tapecalc/pro/presentation/CalculatorViewModel.kt b/app/src/main/kotlin/com/tapecalc/pro/presentation/CalculatorViewModel.kt
+index 80af429..6293d54 100644
+--- a/app/src/main/kotlin/com/tapecalc/pro/presentation/CalculatorViewModel.kt
++++ b/app/src/main/kotlin/com/tapecalc/pro/presentation/CalculatorViewModel.kt
+@@ -421,6 +421,16 @@ class CalculatorViewModel @Inject constructor(
+         _ui.value = CalcUiState(expression = text.take(InputEditor.MAX_LENGTH))
+     }
+ 
++    /**
++     * Writes a Tools-tab result on the tape of the open workspace. It is a record only: it never becomes `ans` and is
++     * not recalculated. [title] names the tool, [input] is what was entered, [summary] the result on one line and
++     * [full] the result with one value per line.
++     */
++    fun saveToolResult(title: String, input: String, summary: String, full: String) {
++        val wid = activeWorkspace.value?.id ?: return
++        viewModelScope.launch { repo.addToolEntry(wid, title, input, summary, full) }
++    }
++
+     fun submitText(text: String) {
+         setExpression(text)
+         calculate()
+diff --git a/app/src/main/kotlin/com/tapecalc/pro/ui/AppRoot.kt b/app/src/main/kotlin/com/tapecalc/pro/ui/AppRoot.kt
+index b40a4d2..16e224a 100644
+--- a/app/src/main/kotlin/com/tapecalc/pro/ui/AppRoot.kt
++++ b/app/src/main/kotlin/com/tapecalc/pro/ui/AppRoot.kt
+@@ -47,6 +47,11 @@ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
+ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
++import com.tapecalc.core.ui.getValue
++import com.tapecalc.core.ui.rememberStoredEnum
++import com.tapecalc.core.ui.rememberStoredInt
++import com.tapecalc.core.ui.rememberStoredText
++import com.tapecalc.core.ui.setValue
+ import androidx.compose.runtime.rememberUpdatedState
+ import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
+@@ -229,19 +234,21 @@ fun AppRoot(viewModel: CalculatorViewModel) {
+     var showTypeDialog by rememberSaveable { mutableStateOf(false) }
+     var showWorkspaces by rememberSaveable { mutableStateOf(false) }
+     var replayTutorial by rememberSaveable { mutableStateOf(false) }
+-    var calcMode by rememberSaveable { mutableStateOf(0) } // two-pane: 0 = basic, 1 = scientific
+-    var sidePane by rememberSaveable { mutableStateOf(SidePane.TAPE) }
+-    var historySection by rememberSaveable { mutableStateOf(HistorySection.TAPE) }
++    // Where the person was is kept on the device (not only in memory), so leaving the app, or closing it, and coming
++    // back puts them exactly where they were.
++    var calcMode by rememberStoredInt("nav.calcMode", 0) // two-pane: 0 = basic, 1 = scientific
++    var sidePane by rememberStoredEnum("nav.sidePane", SidePane.entries.toTypedArray(), SidePane.TAPE)
++    var historySection by rememberStoredEnum("nav.historySection", HistorySection.entries.toTypedArray(), HistorySection.TAPE)
+     var pendingExport by remember { mutableStateOf<PendingExport?>(null) }
+     // Kept here (not inside the phone layout) so the selected tab survives opening Settings.
+     // There is no swipe between tabs any more: the bottom bar is the only way to switch, and only the selected
+     // tab is built, which keeps typing and scrolling light.
+-    var selectedTab by rememberSaveable { mutableStateOf(Tab.BASIC.ordinal) }
++    var selectedTab by rememberStoredInt("nav.tab", Tab.BASIC.ordinal)
+     val tabStates = rememberSaveableStateHolder()
+-    // Which tool is open on the Tools tab, and the QR text. Plain `remember`, not saved: the Tools tab must always
+-    // open on its list, so the QR screen (and its text box) only appears after tapping the QR code button.
+-    var toolsCurrent by remember { mutableStateOf("") }
+-    var qrText by remember { mutableStateOf("") }
++    // Which tool is open on the Tools tab, and the QR text. Both are remembered on the device: coming back to the app
++    // (or switching tabs and returning) shows the same tool with the same values, never the list with the work gone.
++    var toolsCurrent by rememberStoredText("nav.tool", "")
++    var qrText by rememberStoredText("nav.qrText", "")
+     var showMode by remember { mutableStateOf(false) }
+     var calcPrompt by remember { mutableStateOf<List<String>?>(null) }
+ 
+@@ -266,13 +273,11 @@ fun AppRoot(viewModel: CalculatorViewModel) {
+     val selectTab: (Tab) -> Unit = remember(dropFocus) {
+         { tab ->
+             dropFocus()
+-            if (tab != Tab.TOOLS) toolsCurrent = ""
+             selectedTab = tab.ordinal
+         }
+     }
+     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+         dropFocus()
+-        toolsCurrent = "" // coming back to the app, Tools starts at its list again
+     }
+     LifecycleEventEffect(Lifecycle.Event.ON_START) { dropFocus() }
+     LaunchedEffect(selectedTab) { dropFocus() }
+@@ -492,11 +497,12 @@ fun AppRoot(viewModel: CalculatorViewModel) {
+                                     )
+                                     SidePane.TOOLS -> ToolsScreen(
+                                         angleMode = AngleMode.fromName(settings.angleMode),
+-                                        current = toolsCurrent,
++                                        currentTool = toolsCurrent,
+                                         onCurrentChange = { toolsCurrent = it },
+                                         qrText = qrText,
+                                         onQrTextChange = { qrText = it },
+                                         onUseInCalculator = { viewModel.submitText(it) },
++                                        onSaveToTape = viewModel::saveToolResult,
+                                         modifier = Modifier.weight(1f)
+                                     )
+                                     SidePane.SETTINGS -> SettingsScreen(
+@@ -550,11 +556,12 @@ fun AppRoot(viewModel: CalculatorViewModel) {
+                                         Tab.CONVERT -> ConverterScreen(onUseInCalculator = useInCalculator)
+                                         Tab.TOOLS -> ToolsScreen(
+                                             angleMode = AngleMode.fromName(settings.angleMode),
+-                                            current = toolsCurrent,
++                                            currentTool = toolsCurrent,
+                                             onCurrentChange = { toolsCurrent = it },
+                                             qrText = qrText,
+                                             onQrTextChange = { qrText = it },
+-                                            onUseInCalculator = useInCalculator
++                                            onUseInCalculator = useInCalculator,
++                                            onSaveToTape = viewModel::saveToolResult
+                                         )
+                                         Tab.TAPE -> HistoryTab(
+                                             viewModel, historySection, { historySection = it }, settings.groupDigits, historyActions
+diff --git a/app/src/main/kotlin/com/tapecalc/pro/ui/Dialogs.kt b/app/src/main/kotlin/com/tapecalc/pro/ui/Dialogs.kt
+index 512a57f..785e4f2 100644
+--- a/app/src/main/kotlin/com/tapecalc/pro/ui/Dialogs.kt
++++ b/app/src/main/kotlin/com/tapecalc/pro/ui/Dialogs.kt
+@@ -1,5 +1,6 @@
+ package com.tapecalc.pro.ui
+ 
++import com.tapecalc.core.ui.ExpressionField
+ import androidx.compose.foundation.horizontalScroll
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+@@ -46,12 +47,13 @@ fun TypeExpressionDialog(initial: String, onCalculate: (String) -> Unit, onDismi
+         title = { Text("Type an expression") },
+         text = {
+             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+-                OutlinedTextField(
++                ExpressionField(
+                     value = text,
+                     onValueChange = { text = it },
+                     modifier = Modifier.fillMaxWidth(),
+-                    label = { Text("Expression") },
+-                    placeholder = { Text("12 km to mi") }
++                    label = "Expression",
++                    placeholder = "12 km to mi",
++                    singleLine = false
+                 )
+                 Text(
+                     "Examples:\n• 12 km to mi     • 5 kg to lb     • 72 F to C\n• rate = 0.18      • 200 * rate\n• sin(30) + 2^8    • 1200 + 15%",
+diff --git a/app/src/main/kotlin/com/tapecalc/pro/ui/PrefsToolStateStore.kt b/app/src/main/kotlin/com/tapecalc/pro/ui/PrefsToolStateStore.kt
+new file mode 100644
+index 0000000..ebcd6bc
+--- /dev/null
++++ b/app/src/main/kotlin/com/tapecalc/pro/ui/PrefsToolStateStore.kt
+@@ -0,0 +1,27 @@
++package com.tapecalc.pro.ui
++
++import android.content.Context
++import android.content.SharedPreferences
++import com.tapecalc.core.ui.ToolStateStore
++
++/**
++ * Keeps "where the person was" (open tool, typed boxes, graph view, converter choices, selected tab) in the app's
++ * private storage, so it comes back after leaving the app and after closing it. Nothing leaves the phone.
++ *
++ * SharedPreferences keeps everything in memory after the first read and writes to disk in the background, so reading and
++ * writing here is cheap enough to do on every key press.
++ */
++class PrefsToolStateStore(context: Context) : ToolStateStore {
++    private val prefs: SharedPreferences =
++        context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
++
++    override fun get(key: String): String? = prefs.getString(key, null)
++
++    override fun put(key: String, value: String?) {
++        prefs.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
++    }
++
++    private companion object {
++        const val FILE = "crux_where_you_were"
++    }
++}
+diff --git a/app/src/test/kotlin/com/tapecalc/pro/SymbolInputTest.kt b/app/src/test/kotlin/com/tapecalc/pro/SymbolInputTest.kt
+new file mode 100644
+index 0000000..d1573e8
+--- /dev/null
++++ b/app/src/test/kotlin/com/tapecalc/pro/SymbolInputTest.kt
+@@ -0,0 +1,81 @@
++package com.tapecalc.pro
++
++import com.tapecalc.core.ui.InMemoryToolStateStore
++import com.tapecalc.core.ui.SymbolInput
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** The logic behind the row of signs that shows up under an expression box while a letter is being typed. */
++class SymbolInputTest {
++
++    @Test fun typingALetterShowsTheRow() {
++        assertEquals(true, SymbolInput.reaction("", "x", 1))
++        assertEquals(true, SymbolInput.reaction("2", "2x", 2))
++        assertEquals(true, SymbolInput.reaction("sin(", "sin(y", 5))
++    }
++
++    @Test fun typingAnythingElseHidesTheRow() {
++        assertEquals(false, SymbolInput.reaction("x", "x2", 2))
++        assertEquals(false, SymbolInput.reaction("x", "x+", 2))
++        assertEquals(false, SymbolInput.reaction("x", "x ", 2))
++        assertEquals(false, SymbolInput.reaction("x", "x(", 2))
++    }
++
++    @Test fun deletingOrMovingTheCursorLeavesTheRowAsItIs() {
++        assertNull(SymbolInput.reaction("xy", "x", 1))
++        assertNull(SymbolInput.reaction("xy", "xy", 1))
++        assertNull(SymbolInput.reaction("xy", "xy", 0))
++    }
++
++    @Test fun lettersInTheMiddleCountToo() {
++        // the new character sits just before the cursor, not at the end of the text
++        assertEquals(true, SymbolInput.reaction("2+3", "2+x3", 3))
++        assertEquals(false, SymbolInput.reaction("2x", "2*x", 2))
++    }
++
++    @Test fun symbolIsInsertedAtTheCursor() {
++        assertEquals("x^" to 2, SymbolInput.insert("x", 1, 1, "^"))
++        assertEquals("x+y" to 2, SymbolInput.insert("xy", 1, 1, "+"))
++        assertEquals("+" to 1, SymbolInput.insert("", 0, 0, "+"))
++    }
++
++    @Test fun symbolReplacesASelection() {
++        assertEquals("a*c" to 2, SymbolInput.insert("abc", 1, 2, "*"))
++        // a backwards selection works the same way
++        assertEquals("a*c" to 2, SymbolInput.insert("abc", 2, 1, "*"))
++    }
++
++    @Test fun cursorLandsAfterAMultiCharacterSymbol() {
++        assertEquals("2sqrt(" to 6, SymbolInput.insert("2", 1, 1, "sqrt("))
++    }
++
++    @Test fun outOfRangeSelectionIsClamped() {
++        assertEquals("ab+" to 3, SymbolInput.insert("ab", 9, 9, "+"))
++        assertEquals("+ab" to 1, SymbolInput.insert("ab", -3, -3, "+"))
++    }
++
++    @Test fun everySymbolHasLabelInsertAndDescription() {
++        val labels = SymbolInput.symbols.map { it.label }
++        assertEquals(labels.size, labels.toSet().size)
++        for (s in SymbolInput.symbols) {
++            assertTrue(s.label.isNotEmpty())
++            assertTrue(s.insert.isNotEmpty())
++            assertTrue(s.description.isNotEmpty())
++        }
++        // the signs the person asked for
++        for (needed in listOf("+", "−", "×", "÷", "^", "(", ")")) assertTrue(needed, needed in labels)
++    }
++
++    @Test fun storeKeepsAndRemovesValues() {
++        val store = InMemoryToolStateStore()
++        assertNull(store.get("tool.poly.t.coef"))
++        store.put("tool.poly.t.coef", "1, -3, 2")
++        assertEquals("1, -3, 2", store.get("tool.poly.t.coef"))
++        store.put("tool.poly.t.coef", "")
++        assertEquals("", store.get("tool.poly.t.coef"))
++        store.put("tool.poly.t.coef", null)
++        assertNull(store.get("tool.poly.t.coef"))
++    }
++}
+diff --git a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/HistoryExporter.kt b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/HistoryExporter.kt
+index 50ef151..4130ba3 100644
+--- a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/HistoryExporter.kt
++++ b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/HistoryExporter.kt
+@@ -12,7 +12,8 @@ object HistoryExporter {
+         ExportFormat.SHARE -> share(workspaceName, entries)
+     }
+ 
+-    private fun line(e: HistoryEntry): String = "${e.expression} = ${e.displayResult}"
++    private fun line(e: HistoryEntry): String =
++        if (e.isTool) "${e.expression} -> ${e.displayResult}" else "${e.expression} = ${e.displayResult}"
+ 
+     private fun plain(workspace: String, entries: List<HistoryEntry>): String = buildString {
+         val header = "CruxCalculator - $workspace"
+@@ -68,7 +69,7 @@ object HistoryExporter {
+             append('\n')
+             if (!e.label.isNullOrBlank()) append(e.label).append('\n')
+             append("  ").append(e.expression).append('\n')
+-            append("  = ").append(e.displayResult).append('\n')
++            append(if (e.isTool) "  -> " else "  = ").append(e.displayResult).append('\n')
+             if (!e.note.isNullOrBlank()) append("  (").append(e.note).append(")\n")
+         }
+         append("\nCalculated offline with CruxCalculator")
+diff --git a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/Models.kt b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/Models.kt
+index b14863a..06a93ce 100644
+--- a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/Models.kt
++++ b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/Models.kt
+@@ -6,6 +6,13 @@ import com.tapecalc.core.math.EvalResult
+ 
+ data class Workspace(val id: Long, val name: String, val sortOrder: Int)
+ 
++/**
++ * Stored in [HistoryEntry.resultValue] of an entry that was saved from a tool (polynomial roots, statistics, matrices...)
++ * rather than calculated on the keypad. Such an entry is only a record: `ans` skips it and the recalculation of the tape
++ * leaves it alone.
++ */
++const val TOOL_RESULT_MARKER = "tool-result"
++
+ /** OK = up to date, STALE = depends on something that was edited, UPDATED = recalculated after an edit. */
+ enum class EntryStatus {
+     OK, STALE, UPDATED;
+@@ -38,6 +45,10 @@ data class HistoryEntry(
+     val createdAt: Long = 0,
+     val updatedAt: Long = 0
+ ) {
++    /** True for a record saved from the Tools tab. */
++    val isTool: Boolean
++        get() = resultValue == TOOL_RESULT_MARKER
++
+     /** What the tape shows after the equals sign. */
+     val displayResult: String
+         get() = when {
+diff --git a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
+index 8eb1e24..2fcce14 100644
+--- a/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
++++ b/core-data/src/main/kotlin/com/tapecalc/core/data/domain/TapeRecalculator.kt
+@@ -23,7 +23,7 @@ object TapeRecalculator {
+     private fun ansIndex(entries: List<HistoryEntry>, index: Int): Int {
+         for (i in index - 1 downTo 0) {
+             val e = entries[i]
+-            if (!e.isError && e.resultValue.isNotEmpty()) return i
++            if (!e.isError && !e.isTool && e.resultValue.isNotEmpty()) return i
+         }
+         return -1
+     }
+@@ -114,6 +114,7 @@ object TapeRecalculator {
+ 
+         for (j in index + 1 until result.size) {
+             val entry = result[j]
++            if (entry.isTool) continue
+             val analysis = Calculator.analyze(entry.expression)
+             // `ans` for this entry is the nearest earlier entry WITH a result. Entries that are errors do not
+             // produce one, so they must not reset the flag (an error between the edit and an `ans` user used to).
+@@ -152,7 +153,7 @@ object TapeRecalculator {
+         val result = entries.toMutableList()
+         for (j in result.indices) {
+             val entry = result[j]
+-            if (entry.status != EntryStatus.STALE) continue
++            if (entry.isTool || entry.status != EntryStatus.STALE) continue
+             val (recomputed, values) = evaluated(entry, entry.expression, ansBefore(result, j), vars, EntryStatus.UPDATED, now)
+             result[j] = recomputed
+             for ((name, value) in values) {
+diff --git a/core-data/src/main/kotlin/com/tapecalc/core/data/repo/TapeRepository.kt b/core-data/src/main/kotlin/com/tapecalc/core/data/repo/TapeRepository.kt
+index 2ab8aa3..3f5ba2c 100644
+--- a/core-data/src/main/kotlin/com/tapecalc/core/data/repo/TapeRepository.kt
++++ b/core-data/src/main/kotlin/com/tapecalc/core/data/repo/TapeRepository.kt
+@@ -12,6 +12,7 @@ import com.tapecalc.core.data.domain.ExportFormat
+ import com.tapecalc.core.data.domain.HistoryEntry
+ import com.tapecalc.core.data.domain.HistoryExporter
+ import com.tapecalc.core.data.domain.SubmitResult
++import com.tapecalc.core.data.domain.TOOL_RESULT_MARKER
+ import com.tapecalc.core.data.domain.TapeRecalculator
+ import com.tapecalc.core.data.domain.VariableItem
+ import com.tapecalc.core.data.domain.Workspace
+@@ -146,6 +147,26 @@ class TapeRepository(
+         }
+     }
+ 
++    /**
++     * Records a result from the Tools tab on the tape. [input] is the one-line description of what was entered,
++     * [summary] the result on one line and [full] the result with one line per value. The entry is a record only:
++     * `ans` and the tape recalculation skip it.
++     */
++    suspend fun addToolEntry(workspaceId: Long, title: String, input: String, summary: String, full: String): Long {
++        val now = clock()
++        val entry = HistoryEntry(
++            workspaceId = workspaceId,
++            expression = input.take(400),
++            resultText = summary.take(300),
++            resultFull = full.take(2000),
++            resultValue = TOOL_RESULT_MARKER,
++            label = title.take(40),
++            createdAt = now,
++            updatedAt = now
++        )
++        return history.insert(entry.toEntity())
++    }
++
+     /**
+      * Edits an entry and updates (autoRecalc) or flags (otherwise) later entries that depend on it.
+      * Returns false if the entry does not exist.
+diff --git a/core-data/src/test/kotlin/com/tapecalc/core/data/ToolEntryTest.kt b/core-data/src/test/kotlin/com/tapecalc/core/data/ToolEntryTest.kt
+new file mode 100644
+index 0000000..90ec50c
+--- /dev/null
++++ b/core-data/src/test/kotlin/com/tapecalc/core/data/ToolEntryTest.kt
+@@ -0,0 +1,69 @@
++package com.tapecalc.core.data
++
++import com.tapecalc.core.data.domain.EntryStatus
++import com.tapecalc.core.data.domain.ExportFormat
++import com.tapecalc.core.data.domain.HistoryEntry
++import com.tapecalc.core.data.domain.HistoryExporter
++import com.tapecalc.core.data.domain.TOOL_RESULT_MARKER
++import com.tapecalc.core.data.domain.TapeRecalculator
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** A result saved from the Tools tab is a record on the tape: it must never disturb `ans` or the recalculation. */
++class ToolEntryTest {
++
++    private fun calc(id: Long, expr: String, ans: com.tapecalc.core.math.CalcValue?): HistoryEntry {
++        val base = HistoryEntry(id = id, workspaceId = 1, expression = expr)
++        return TapeRecalculator.evaluated(base, expr, ans, emptyMap(), EntryStatus.OK, 0).first
++    }
++
++    private fun tool(id: Long) = HistoryEntry(
++        id = id, workspaceId = 1,
++        expression = "Polynomial roots: 1, -3, 2",
++        resultText = "x₁ = 1; x₂ = 2",
++        resultFull = "x₁ = 1\nx₂ = 2",
++        resultValue = TOOL_RESULT_MARKER,
++        label = "Polynomial roots"
++    )
++
++    @Test fun markerIdentifiesToolEntries() {
++        assertTrue(tool(1).isTool)
++        assertFalse(calc(1, "1+1", null).isTool)
++    }
++
++    @Test fun ansSkipsToolEntries() {
++        val first = calc(1, "10", null)
++        val tape = listOf(first, tool(2))
++        val ans = TapeRecalculator.ansBefore(tape, tape.size)
++        assertEquals("10", ans!!.decimal.toPlainString())
++    }
++
++    @Test fun editingAnEarlierLineLeavesToolEntryAlone() {
++        val first = calc(1, "10", null)
++        val tool = tool(2)
++        val third = calc(3, "ans*2", TapeRecalculator.ansBefore(listOf(first, tool), 2))
++        assertEquals("20", third.displayResult)
++        val out = TapeRecalculator.edit(listOf(first, tool, third), 1, "100", emptyMap(), autoRecalc = true, now = 5).entries
++        assertEquals(tool, out[1])
++        assertEquals("200", out[2].displayResult)
++        assertEquals(EntryStatus.UPDATED, out[2].status)
++    }
++
++    @Test fun staleRecalculationSkipsToolEntries() {
++        val staleTool = tool(1).copy(status = EntryStatus.STALE)
++        val out = TapeRecalculator.recalculateStale(listOf(staleTool), emptyMap(), 1).entries
++        assertEquals(staleTool, out[0])
++        assertFalse(out[0].isError)
++    }
++
++    @Test fun exportsReadNaturally() {
++        val entries = listOf(calc(1, "1+1", null), tool(2))
++        val text = HistoryExporter.export(ExportFormat.PLAIN_TEXT, "Personal", entries)
++        assertTrue(text, text.contains("1+1 = 2"))
++        assertTrue(text, text.contains("Polynomial roots: 1, -3, 2 -> x₁ = 1; x₂ = 2"))
++        val csv = HistoryExporter.export(ExportFormat.CSV, "Personal", entries)
++        assertTrue(csv, csv.contains("x₁ = 1; x₂ = 2"))
++    }
++}
+diff --git a/core-data/src/test/kotlin/com/tapecalc/core/data/ToolTapeAndVariablesTest.kt b/core-data/src/test/kotlin/com/tapecalc/core/data/ToolTapeAndVariablesTest.kt
+new file mode 100644
+index 0000000..91e508b
+--- /dev/null
++++ b/core-data/src/test/kotlin/com/tapecalc/core/data/ToolTapeAndVariablesTest.kt
+@@ -0,0 +1,77 @@
++package com.tapecalc.core.data
++
++import com.tapecalc.core.data.domain.SubmitResult
++import com.tapecalc.core.data.repo.TapeRepository
++import com.tapecalc.core.math.AngleMode
++import kotlinx.coroutines.flow.first
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Before
++import org.junit.Test
++
++/** Tools-tab results on the tape, and the promise that saved variables stay until the person deletes them. */
++class ToolTapeAndVariablesTest {
++
++    private var clock = 1_000L
++    private lateinit var repo: TapeRepository
++    private var wid = 0L
++
++    @Before
++    fun setUp() = runBlocking {
++        clock = 1_000L
++        repo = TapeRepository(FakeWorkspaceDao(), FakeHistoryDao(), FakeVariableDao()) { clock++ }
++        wid = repo.ensureDefaults().first().id
++    }
++
++    @Test
++    fun toolResultIsWrittenToTheTape() = runBlocking {
++        repo.addToolEntry(wid, "Polynomial roots", "Polynomial roots: 1, -3, 2", "x₁ = 1; x₂ = 2", "x₁ = 1\nx₂ = 2")
++        val e = repo.observeEntries(wid).first().single()
++        assertTrue(e.isTool)
++        assertEquals("Polynomial roots: 1, -3, 2", e.expression)
++        assertEquals("x₁ = 1; x₂ = 2", e.displayResult)
++        assertEquals("Polynomial roots", e.label)
++        assertFalse(e.isError)
++    }
++
++    @Test
++    fun toolResultDoesNotBecomeAnsAndSurvivesEdits() = runBlocking {
++        val first = repo.submit(wid, "10", AngleMode.DEG) as SubmitResult.Added
++        repo.addToolEntry(wid, "Statistics", "Statistics: 1, 2, 3", "mean = 2", "mean = 2")
++        // the next calculation still sees 10 as `ans`, not the tool record
++        repo.submit(wid, "ans*3", AngleMode.DEG)
++        val tape = repo.observeEntries(wid).first()
++        assertEquals(listOf("10", "mean = 2", "30"), tape.map { it.displayResult })
++        // editing the first line recalculates `ans*3`; the tool record is untouched
++        repo.editEntry(tape[0].id, "20", true)
++        val after = repo.observeEntries(wid).first()
++        assertEquals("mean = 2", after[1].displayResult)
++        assertTrue(after[1].isTool)
++        assertEquals("60", after[2].displayResult)
++    }
++
++    @Test
++    fun savedVariablesSurviveClearingAndDeletingWorkspaces() = runBlocking {
++        repo.submit(wid, "rate = 0.18", AngleMode.DEG)
++        repo.saveRawVariable("a", "7", "7")
++        val other = repo.addWorkspace("Scratch")
++        repo.clearWorkspace(wid)
++        assertTrue(repo.deleteWorkspace(other))
++        assertEquals(setOf("rate", "a"), repo.loadVariables().keys)
++    }
++
++    @Test
++    fun aVariableChangesOnlyWhenThePersonChangesOrDeletesIt() = runBlocking {
++        repo.saveRawVariable("a", "7", "7")
++        repo.submit(wid, "1+1", AngleMode.DEG)
++        repo.addToolEntry(wid, "Tool", "in", "out", "out")
++        assertEquals("7", repo.observeVariables().first().single { it.name == "a" }.displayText)
++        repo.deleteVariable("a")
++        assertNull(repo.loadVariables()["a"])
++        assertNotNull(repo.observeEntries(wid).first())
++    }
++}
+diff --git a/core-math/src/main/kotlin/com/tapecalc/core/math/tools/ToolHistory.kt b/core-math/src/main/kotlin/com/tapecalc/core/math/tools/ToolHistory.kt
+new file mode 100644
+index 0000000..c702b52
+--- /dev/null
++++ b/core-math/src/main/kotlin/com/tapecalc/core/math/tools/ToolHistory.kt
+@@ -0,0 +1,52 @@
++package com.tapecalc.core.math.tools
++
++/**
++ * Turns a finished tool calculation into the three texts the tape stores: what was entered, the result on one line,
++ * and the result with one line per value. Pure text work, so it is unit tested.
++ */
++object ToolHistory {
++
++    class Record(
++        /** For example `Polynomial roots: 1, -3, 2`. */
++        val input: String,
++        /** For example `x₁ = 1; x₂ = 2`. */
++        val summary: String,
++        /** The same result, one value per line. */
++        val full: String
++    )
++
++    private fun oneLine(text: String): String =
++        text.trim().replace(Regex("\\s*[\\r\\n]+\\s*"), " / ")
++
++    /** What the person entered: the picked chips, then each filled box (labelled when the tool has several boxes). */
++    fun inputText(spec: ToolSpec, texts: Map<String, String>, choices: Map<String, Int>): String {
++        val parts = ArrayList<String>()
++        for (option in spec.options) {
++            val index = choices[option.id] ?: option.default
++            option.choices.getOrNull(index)?.let { parts.add("[$it]") }
++        }
++        val labelled = spec.fields.size > 1
++        for (field in spec.fields) {
++            val value = oneLine(texts[field.id].orEmpty())
++            if (value.isEmpty()) continue
++            parts.add(if (labelled) "${field.label}: $value" else value)
++        }
++        val body = parts.joinToString("; ")
++        return if (body.isEmpty()) spec.title else "${spec.title}: $body"
++    }
++
++    /** The record for a successful result, or null when there is nothing worth saving (an error). */
++    fun record(spec: ToolSpec, texts: Map<String, String>, choices: Map<String, Int>, result: ToolResult): Record? {
++        if (result !is ToolResult.Ok) return null
++        if (result.lines.isEmpty()) return null
++        val perLine = result.lines.map { line ->
++            val value = oneLine(line.value)
++            if (line.label.isEmpty()) value else "${line.label} = $value"
++        }
++        return Record(
++            input = inputText(spec, texts, choices),
++            summary = perLine.joinToString("; "),
++            full = result.copyText
++        )
++    }
++}
+diff --git a/core-math/src/test/kotlin/com/tapecalc/core/math/ToolHistoryTest.kt b/core-math/src/test/kotlin/com/tapecalc/core/math/ToolHistoryTest.kt
+new file mode 100644
+index 0000000..0adaf30
+--- /dev/null
++++ b/core-math/src/test/kotlin/com/tapecalc/core/math/ToolHistoryTest.kt
+@@ -0,0 +1,85 @@
++package com.tapecalc.core.math
++
++import com.tapecalc.core.math.tools.ToolHistory
++import com.tapecalc.core.math.tools.ToolInput
++import com.tapecalc.core.math.tools.ToolResult
++import com.tapecalc.core.math.tools.Tools
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++/** What a Tools-tab calculation looks like when it is written on the tape. */
++class ToolHistoryTest {
++
++    private fun defaults(id: String): Triple<com.tapecalc.core.math.tools.ToolSpec, Map<String, String>, Map<String, Int>> {
++        val spec = Tools.byId(id)!!
++        return Triple(
++            spec,
++            spec.fields.associate { it.id to it.default },
++            spec.options.associate { it.id to it.default }
++        )
++    }
++
++    @Test fun singleBoxToolShowsTitleAndValue() {
++        val (spec, texts, choices) = defaults("poly")
++        assertEquals("Polynomial roots: 1, -3, 2", ToolHistory.inputText(spec, texts, choices))
++    }
++
++    @Test fun severalBoxesAreLabelled() {
++        val (spec, texts, choices) = defaults("solve")
++        val text = ToolHistory.inputText(spec, texts, choices)
++        assertTrue(text, text.startsWith("Solve f(x) = 0: f(x): x^3 - 2x - 5; Starting guess: 1"))
++    }
++
++    @Test fun multiLineInputIsOneLine() {
++        val (spec, texts, choices) = defaults("linear")
++        val text = ToolHistory.inputText(spec, texts, choices)
++        assertTrue(text, !text.contains('\n'))
++        assertTrue(text, text.contains("2, 1, 5 / 1, -1, 1"))
++    }
++
++    @Test fun emptyBoxesAreLeftOut() {
++        val (spec, _, choices) = defaults("solve")
++        val text = ToolHistory.inputText(spec, mapOf("f" to "x-1", "guess" to ""), choices)
++        assertEquals("Solve f(x) = 0: f(x): x-1", text)
++    }
++
++    @Test fun chosenChipAppearsInBrackets() {
++        val spec = Tools.byId("calculus")!!
++        val option = spec.options.first()
++        val picked = option.choices.last()
++        val text = ToolHistory.inputText(spec, emptyMap(), mapOf(option.id to option.choices.lastIndex))
++        assertTrue(text, text.startsWith("${spec.title}: [$picked]"))
++    }
++
++    @Test fun successfulResultBecomesARecord() {
++        val (spec, texts, choices) = defaults("poly")
++        val result = spec.run(ToolInput(texts, choices, EvalContext()))
++        val record = ToolHistory.record(spec, texts, choices, result)
++        assertNotNull(record)
++        record!!
++        assertEquals("Polynomial roots: 1, -3, 2", record.input)
++        assertEquals(2, record.summary.split("; ").size)
++        assertEquals(2, record.full.lines().size)
++        assertTrue(record.summary, record.summary.startsWith("x₁ = "))
++    }
++
++    @Test fun errorsAreNotSaved() {
++        val (spec, texts, choices) = defaults("poly")
++        assertNull(ToolHistory.record(spec, texts, choices, ToolResult.Err("nope")))
++    }
++
++    @Test fun everyToolHasARecordWithItsDefaults() {
++        for (spec in Tools.all) {
++            val (_, texts, choices) = defaults(spec.id)
++            val result = spec.run(ToolInput(texts, choices, EvalContext()))
++            val record = ToolHistory.record(spec, texts, choices, result)
++            assertNotNull(spec.id, record)
++            assertTrue(spec.id, record!!.summary.isNotBlank())
++            assertTrue(spec.id, !record.summary.contains('\n'))
++            assertTrue(spec.id, !record.input.contains('\n'))
++        }
++    }
++}
+diff --git a/core-ui/src/main/kotlin/com/tapecalc/core/ui/ExpressionField.kt b/core-ui/src/main/kotlin/com/tapecalc/core/ui/ExpressionField.kt
+new file mode 100644
+index 0000000..0eb7c89
+--- /dev/null
++++ b/core-ui/src/main/kotlin/com/tapecalc/core/ui/ExpressionField.kt
+@@ -0,0 +1,133 @@
++package com.tapecalc.core.ui
++
++import androidx.compose.foundation.horizontalScroll
++import androidx.compose.foundation.layout.Arrangement
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.Column
++import androidx.compose.foundation.layout.Row
++import androidx.compose.foundation.layout.defaultMinSize
++import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.rememberScrollState
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.foundation.text.KeyboardOptions
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.OutlinedTextField
++import androidx.compose.material3.Surface
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Alignment
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.focus.onFocusChanged
++import androidx.compose.ui.semantics.contentDescription
++import androidx.compose.ui.semantics.semantics
++import androidx.compose.ui.text.TextRange
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.input.KeyboardType
++import androidx.compose.ui.text.input.TextFieldValue
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
++
++/**
++ * A text box for expressions and equations. While a letter is being typed (x, y, a, b...), a row of the signs an
++ * expression needs (+ − × ÷ ^ ( ) = ...) appears under the box, so there is no need to switch the phone keyboard to its
++ * symbol page. The row goes away when something other than a letter is typed, or when the box loses focus, and comes
++ * back with the next letter.
++ */
++@Composable
++fun ExpressionField(
++    value: String,
++    onValueChange: (String) -> Unit,
++    modifier: Modifier = Modifier,
++    label: String? = null,
++    placeholder: String? = null,
++    singleLine: Boolean = true,
++    minLines: Int = 1,
++    isError: Boolean = false,
++    supportingText: String? = null,
++    keyboardOptions: KeyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
++) {
++    var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
++    var rowWanted by remember { mutableStateOf(false) }
++    var focused by remember { mutableStateOf(false) }
++    // Follow changes made from outside (a Clear button, restored text, a length limit applied by the caller).
++    val shown = if (field.text == value) field else TextFieldValue(value, TextRange(value.length))
++
++    fun accept(next: TextFieldValue) {
++        field = next
++        onValueChange(next.text)
++    }
++
++    Column(modifier) {
++        OutlinedTextField(
++            value = shown,
++            onValueChange = { next ->
++                if (next.selection.collapsed) {
++                    SymbolInput.reaction(shown.text, next.text, next.selection.start)?.let { rowWanted = it }
++                }
++                accept(next)
++            },
++            modifier = Modifier
++                .fillMaxWidth()
++                .onFocusChanged {
++                    focused = it.isFocused
++                    if (!it.isFocused) rowWanted = false
++                },
++            label = if (label != null) {
++                { Text(label) }
++            } else null,
++            placeholder = if (placeholder != null) {
++                { Text(placeholder) }
++            } else null,
++            singleLine = singleLine,
++            minLines = minLines,
++            isError = isError,
++            supportingText = if (supportingText != null) {
++                { Text(supportingText) }
++            } else null,
++            keyboardOptions = keyboardOptions
++        )
++        if (rowWanted && focused) {
++            SymbolRow(
++                onSymbol = { symbol ->
++                    val sel = shown.selection
++                    val (text, caret) = SymbolInput.insert(shown.text, sel.start, sel.end, symbol)
++                    accept(TextFieldValue(text, TextRange(caret)))
++                }
++            )
++        }
++    }
++}
++
++/** The row of signs itself: scrolls sideways when the screen is narrow. */
++@Composable
++fun SymbolRow(onSymbol: (String) -> Unit, modifier: Modifier = Modifier) {
++    Row(
++        modifier = modifier
++            .fillMaxWidth()
++            .horizontalScroll(rememberScrollState())
++            .padding(top = 4.dp, bottom = 2.dp),
++        horizontalArrangement = Arrangement.spacedBy(6.dp)
++    ) {
++        SymbolInput.symbols.forEach { symbol ->
++            Surface(
++                shape = RoundedCornerShape(10.dp),
++                color = MaterialTheme.colorScheme.secondaryContainer,
++                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
++                onClick = { onSymbol(symbol.insert) },
++                modifier = Modifier.semantics { contentDescription = symbol.description }
++            ) {
++                Box(
++                    modifier = Modifier.defaultMinSize(minWidth = 40.dp, minHeight = 40.dp).padding(horizontal = 10.dp),
++                    contentAlignment = Alignment.Center
++                ) {
++                    Text(symbol.label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
++                }
++            }
++        }
++    }
++}
+diff --git a/core-ui/src/main/kotlin/com/tapecalc/core/ui/Keys.kt b/core-ui/src/main/kotlin/com/tapecalc/core/ui/Keys.kt
+index 8e2b394..acdf4d9 100644
+--- a/core-ui/src/main/kotlin/com/tapecalc/core/ui/Keys.kt
++++ b/core-ui/src/main/kotlin/com/tapecalc/core/ui/Keys.kt
+@@ -133,18 +133,25 @@ fun KeyButton(
+     alphaHint: String? = null,
+     /** Draws the key in the accent colour (SHIFT / ALPHA / HYP while they are switched on). */
+     highlighted: Boolean = false,
+-    minHeight: Dp = 48.dp
++    minHeight: Dp = 48.dp,
++    /**
++     * Hides every small label (SHIFT, ALPHA and long-press hints). The scientific keypad turns this on while SHIFT,
++     * ALPHA or HYP is active, so only the layer that is in use is drawn, in the large size.
++     */
++    hideHints: Boolean = false
+ ) {
+     val look = LocalCalcLook.current
+     val c = look.colors
+-    val (rawContainer, rawContent) = when (spec.kind) {
+-        KeyKind.DIGIT -> c.digitKey to c.digitText
+-        KeyKind.OPERATOR -> c.operatorKey to c.operatorText
+-        KeyKind.FUNCTION -> c.functionKey to c.functionText
+-        KeyKind.EQUALS -> c.equalsKey to c.equalsText
++    // AC and delete are drawn like "=": filled with the theme colour.
++    val filledLikeEquals = spec.kind == KeyKind.EQUALS || spec.action == KeyAction.AllClear || spec.action == KeyAction.Backspace
++    val (rawContainer, rawContent) = when {
++        filledLikeEquals -> c.equalsKey to c.equalsText
++        spec.kind == KeyKind.DIGIT -> c.digitKey to c.digitText
++        spec.kind == KeyKind.OPERATOR -> c.operatorKey to c.operatorText
++        else -> c.functionKey to c.functionText
+     }
+     val style = look.keypadStyle
+-    val isEquals = spec.kind == KeyKind.EQUALS
++    val isEquals = filledLikeEquals
+     val container: Color = when {
+         highlighted -> MaterialTheme.colorScheme.primary
+         isEquals || style == KeypadStyle.FILLED -> rawContainer
+@@ -187,7 +194,7 @@ fun KeyButton(
+             softWrap = false,
+             textAlign = TextAlign.Center
+         )
+-        if (spec.hint != null && alphaHint == null) {
++        if (!hideHints && spec.hint != null && alphaHint == null) {
+             Text(
+                 text = spec.hint,
+                 color = content.copy(alpha = 0.6f),
+@@ -199,7 +206,7 @@ fun KeyButton(
+                     .clearAndSetSemantics { }
+             )
+         }
+-        if (shiftHint != null) {
++        if (!hideHints && shiftHint != null) {
+             Text(
+                 text = shiftHint,
+                 color = c.accent,
+@@ -212,7 +219,7 @@ fun KeyButton(
+                     .clearAndSetSemantics { }
+             )
+         }
+-        if (alphaHint != null) {
++        if (!hideHints && alphaHint != null) {
+             Text(
+                 text = alphaHint,
+                 color = MaterialTheme.colorScheme.tertiary,
+diff --git a/core-ui/src/main/kotlin/com/tapecalc/core/ui/StoredState.kt b/core-ui/src/main/kotlin/com/tapecalc/core/ui/StoredState.kt
+new file mode 100644
+index 0000000..43a6f99
+--- /dev/null
++++ b/core-ui/src/main/kotlin/com/tapecalc/core/ui/StoredState.kt
+@@ -0,0 +1,110 @@
++package com.tapecalc.core.ui
++
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.runtime.staticCompositionLocalOf
++import kotlin.reflect.KProperty
++
++/**
++ * A tiny key-value store for "where the person was": the open tool, what they typed into its boxes, the graph view and
++ * so on. The app backs it with private on-device storage, so it survives leaving the app and closing it. Nothing is sent
++ * anywhere.
++ */
++interface ToolStateStore {
++    fun get(key: String): String?
++
++    /** A null [value] removes the key. */
++    fun put(key: String, value: String?)
++}
++
++/** Keeps values only while the process lives. Used as the default (previews, tests). */
++class InMemoryToolStateStore : ToolStateStore {
++    private val map = HashMap<String, String>()
++    override fun get(key: String): String? = map[key]
++    override fun put(key: String, value: String?) {
++        if (value == null) map.remove(key) else map[key] = value
++    }
++}
++
++val LocalToolStateStore = staticCompositionLocalOf<ToolStateStore> { InMemoryToolStateStore() }
++
++/** Observable text that writes itself to the [ToolStateStore] every time it changes. */
++class StoredText internal constructor(
++    private val key: String,
++    private val store: ToolStateStore,
++    initial: String
++) {
++    private var state by mutableStateOf(initial)
++
++    var value: String
++        get() = state
++        set(v) {
++            if (v != state) {
++                state = v
++                store.put(key, v)
++            }
++        }
++}
++
++/** Like `rememberSaveable`, but the text is also kept after the app is closed. [default] is used the first time only. */
++@Composable
++fun rememberStoredText(key: String, default: String): StoredText {
++    val store = LocalToolStateStore.current
++    return remember(key, store) { StoredText(key, store, store.get(key) ?: default) }
++}
++
++/** Same as [rememberStoredText] for a whole number (a selected category, a radix...). */
++class StoredInt internal constructor(private val text: StoredText, private val fallback: Int) {
++    var value: Int
++        get() = text.value.toIntOrNull() ?: fallback
++        set(v) {
++            text.value = v.toString()
++        }
++}
++
++@Composable
++fun rememberStoredInt(key: String, default: Int): StoredInt {
++    val text = rememberStoredText(key, default.toString())
++    return remember(text) { StoredInt(text, default) }
++}
++
++/** Same again for a choice between a few named options (the open side panel, the history section...). */
++class StoredEnum<T : Enum<T>> internal constructor(
++    private val text: StoredText,
++    private val values: Array<T>,
++    private val fallback: T
++) {
++    var value: T
++        get() = values.firstOrNull { it.name == text.value } ?: fallback
++        set(v) {
++            text.value = v.name
++        }
++}
++
++@Composable
++fun <T : Enum<T>> rememberStoredEnum(key: String, values: Array<T>, default: T): StoredEnum<T> {
++    val text = rememberStoredText(key, default.name)
++    return remember(text) { StoredEnum(text, values, default) }
++}
++
++operator fun <T : Enum<T>> StoredEnum<T>.getValue(thisRef: Any?, property: KProperty<*>): T = value
++
++operator fun <T : Enum<T>> StoredEnum<T>.setValue(thisRef: Any?, property: KProperty<*>, newValue: T) {
++    value = newValue
++}
++
++// `var input by rememberStoredText(...)` reads and writes like an ordinary state variable.
++operator fun StoredText.getValue(thisRef: Any?, property: KProperty<*>): String = value
++
++operator fun StoredText.setValue(thisRef: Any?, property: KProperty<*>, newValue: String) {
++    value = newValue
++}
++
++operator fun StoredInt.getValue(thisRef: Any?, property: KProperty<*>): Int = value
++
++operator fun StoredInt.setValue(thisRef: Any?, property: KProperty<*>, newValue: Int) {
++    value = newValue
++}
+diff --git a/core-ui/src/main/kotlin/com/tapecalc/core/ui/SymbolInput.kt b/core-ui/src/main/kotlin/com/tapecalc/core/ui/SymbolInput.kt
+new file mode 100644
+index 0000000..65175c0
+--- /dev/null
++++ b/core-ui/src/main/kotlin/com/tapecalc/core/ui/SymbolInput.kt
+@@ -0,0 +1,46 @@
++package com.tapecalc.core.ui
++
++/**
++ * Plain logic behind the symbol row that appears under an expression box while a letter is being typed.
++ * No Android or Compose code here, so it is unit tested.
++ */
++object SymbolInput {
++
++    /** One key of the row. [label] is what is drawn, [insert] is the text put into the box. */
++    data class Symbol(val label: String, val insert: String, val description: String)
++
++    val symbols: List<Symbol> = listOf(
++        Symbol("+", "+", "plus"),
++        Symbol("−", "-", "minus"),
++        Symbol("×", "*", "times"),
++        Symbol("÷", "/", "divide"),
++        Symbol("^", "^", "power"),
++        Symbol("(", "(", "open bracket"),
++        Symbol(")", ")", "close bracket"),
++        Symbol("=", "=", "equals"),
++        Symbol(",", ",", "comma"),
++        Symbol(".", ".", "decimal point"),
++        Symbol("π", "pi", "pi"),
++        Symbol("√", "sqrt(", "square root"),
++        Symbol("|x|", "abs(", "absolute value"),
++        Symbol("%", "%", "percent")
++    )
++
++    /**
++     * What a change of the text means for the row: `true` = a letter was just typed (show the row), `false` = something
++     * else was typed (hide it), `null` = nothing was typed (a deletion or a cursor move), so leave the row as it is.
++     * [caret] is the cursor position after the change.
++     */
++    fun reaction(oldText: String, newText: String, caret: Int): Boolean? {
++        if (newText.length <= oldText.length) return null
++        if (caret <= 0 || caret > newText.length) return null
++        return newText[caret - 1].isLetter()
++    }
++
++    /** Puts [symbol] in place of the selection [selStart, selEnd) and returns the new text with the new cursor position. */
++    fun insert(text: String, selStart: Int, selEnd: Int, symbol: String): Pair<String, Int> {
++        val start = minOf(selStart, selEnd).coerceIn(0, text.length)
++        val end = maxOf(selStart, selEnd).coerceIn(0, text.length)
++        return text.substring(0, start) + symbol + text.substring(end) to start + symbol.length
++    }
++}
+diff --git a/feature-basic/src/main/kotlin/com/tapecalc/feature/basic/CalculatorDisplay.kt b/feature-basic/src/main/kotlin/com/tapecalc/feature/basic/CalculatorDisplay.kt
+index b716baf..909e865 100644
+--- a/feature-basic/src/main/kotlin/com/tapecalc/feature/basic/CalculatorDisplay.kt
++++ b/feature-basic/src/main/kotlin/com/tapecalc/feature/basic/CalculatorDisplay.kt
+@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.defaultMinSize
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
+ import androidx.compose.foundation.layout.height
++import androidx.compose.foundation.layout.heightIn
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.rememberScrollState
+ import androidx.compose.foundation.verticalScroll
+@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.draw.clipToBounds
+ import androidx.compose.ui.semantics.LiveRegionMode
+ import androidx.compose.ui.semantics.Role
+ import androidx.compose.ui.semantics.liveRegion
+@@ -115,121 +117,43 @@ fun CalculatorDisplay(
+ ) {
+     val look = LocalCalcLook.current
+     val scale = look.fontScale
+-    val onBg = MaterialTheme.colorScheme.onBackground
+-    val muted = look.colors.muted
+ 
+     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+         DisplayHeader(state, actions)
+ 
+-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
++        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+             val widthDp = maxWidth.value
+-            Column(
+-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
+-                horizontalAlignment = Alignment.End
+-            ) {
+-                miniTape.takeLast(maxTapeLines).forEach { line ->
+-                    Text(
+-                        text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
+-                        color = muted,
+-                        fontSize = 14.sp * scale,
+-                        maxLines = 1,
+-                        overflow = TextOverflow.Ellipsis,
+-                        modifier = Modifier
+-                            .clickable(
+-                                onClickLabel = if (scientific) "Edit this line" else "Open tape",
+-                                onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
+-                            )
+-                            .padding(vertical = 2.dp)
+-                    )
+-                }
+-                Spacer(Modifier.height(8.dp))
+-
+-                Column(
+-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+-                    horizontalAlignment = Alignment.End
+-                ) {
+-                    if (state.result != null) {
+-                        if (!state.resultExpression.isNullOrBlank()) {
+-                            MathText(
+-                                text = state.resultExpression,
+-                                cursor = null,
+-                                fontSize = (if (scientific) fitFontSize(widthDp, Mk.stripMarkers(state.resultExpression).length, 22f, 15f) else 20f).sp * scale,
+-                                color = muted,
+-                                weight = FontWeight.Normal
+-                            )
+-                        }
+-                        Text(
+-                            text = state.result,
+-                            color = onBg,
+-                            textAlign = TextAlign.End,
+-                            style = TextStyle(
+-                                fontSize = (if (scientific) fitFontSize(widthDp, state.result.length, 48f, 22f) else expressionFontSize(state.result.length).toFloat()).sp * scale,
+-                                fontWeight = FontWeight.SemiBold,
+-                                fontFeatureSettings = "tnum"
+-                            ),
+-                            modifier = if (state.canToggleFraction) {
+-                                Modifier.clickable(role = Role.Button, onClickLabel = "Switch between fraction and decimal") {
+-                                    actions.onAction(KeyAction.ToggleFraction)
+-                                }.defaultMinSize(minHeight = 48.dp)
+-                            } else Modifier
+-                        )
+-                        if (state.secondaryResult != null) {
+-                            Text(
+-                                text = state.secondaryResult,
+-                                color = muted,
+-                                fontSize = 16.sp * scale,
+-                                textAlign = TextAlign.End
+-                            )
+-                        }
+-                    } else {
+-                        val shownLength = Mk.stripMarkers(state.expression).length
+-                        val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
+-                        val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
+-                        // the basic screen only shows the cursor when it is somewhere other than the end of the line
+-                        val showCursor = scientific || cursor < state.expression.length
+-                        if (state.expression.isEmpty() && !showCursor) {
+-                            Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
+-                        } else {
+-                            MathText(
+-                                text = state.expression,
+-                                cursor = if (showCursor) cursor else null,
+-                                fontSize = fontSp,
+-                                color = onBg
+-                            )
+-                        }
+-                        if (state.error != null) {
+-                            Text(
+-                                text = state.error,
+-                                color = look.colors.error,
+-                                fontSize = 18.sp * scale,
+-                                textAlign = TextAlign.End
+-                            )
+-                        } else if (state.preview != null) {
+-                            Text(
+-                                text = state.preview,
+-                                color = muted,
+-                                fontSize = 24.sp * scale,
+-                                textAlign = TextAlign.End,
+-                                style = TextStyle(fontFeatureSettings = "tnum")
+-                            )
++            if (scientific) {
++                // Two zones. The earlier calculations start right under the top buttons; the line being worked on sits
++                // at the bottom and always has room for at least two lines of the large text.
++                val workMin = (44f * scale * 2.4f).dp
++                Column(Modifier.fillMaxSize()) {
++                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
++                        val lineHeightDp = 21f * scale
++                        val fit = (maxHeight.value / lineHeightDp).toInt().coerceAtLeast(0)
++                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
++                            HistoryLines(miniTape.takeLast(minOf(maxTapeLines, fit)), true, actions)
+                         }
+                     }
+-                    if (state.pendingLabel != null) {
+-                        Text(
+-                            text = state.pendingLabel,
+-                            color = MaterialTheme.colorScheme.tertiary,
+-                            fontSize = 13.sp * scale,
+-                            textAlign = TextAlign.End
+-                        )
++                    Box(
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .heightIn(min = workMin, max = maxHeight * 0.8f)
++                            .verticalScroll(rememberScrollState(), reverseScrolling = true),
++                        contentAlignment = Alignment.BottomEnd
++                    ) {
++                        WorkingArea(state, true, widthDp, actions)
+                     }
+-                    if (state.warning != null) {
+-                        Text(
+-                            text = state.warning,
+-                            color = look.colors.warning,
+-                            fontSize = 12.sp * scale,
+-                            textAlign = TextAlign.End,
+-                            modifier = Modifier.padding(top = 4.dp)
+-                        )
++                }
++            } else {
++                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
++                    Column(
++                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
++                        horizontalAlignment = Alignment.End
++                    ) {
++                        HistoryLines(miniTape.takeLast(maxTapeLines), false, actions)
++                        Spacer(Modifier.height(8.dp))
++                        WorkingArea(state, false, widthDp, actions)
+                     }
+                 }
+             }
+@@ -237,6 +161,127 @@ fun CalculatorDisplay(
+     }
+ }
+ 
++/** The earlier calculations, oldest first, as small muted lines. */
++@Composable
++private fun HistoryLines(lines: List<MiniTapeLine>, scientific: Boolean, actions: DisplayActions) {
++    val look = LocalCalcLook.current
++    val scale = look.fontScale
++    val muted = look.colors.muted
++    lines.forEach { line ->
++        Text(
++            text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
++            color = muted,
++            fontSize = 14.sp * scale,
++            maxLines = 1,
++            overflow = TextOverflow.Ellipsis,
++            modifier = Modifier
++                .clickable(
++                    onClickLabel = if (scientific) "Edit this line" else "Open tape",
++                    onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
++                )
++                .padding(vertical = 2.dp)
++        )
++    }
++}
++
++/** The line being typed, or the result just calculated, with its preview, error and warnings. */
++@Composable
++private fun WorkingArea(state: DisplayState, scientific: Boolean, widthDp: Float, actions: DisplayActions) {
++    val look = LocalCalcLook.current
++    val scale = look.fontScale
++    val onBg = MaterialTheme.colorScheme.onBackground
++    val muted = look.colors.muted
++
++    Column(
++        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
++        horizontalAlignment = Alignment.End
++    ) {
++        if (state.result != null) {
++            if (!state.resultExpression.isNullOrBlank()) {
++                MathText(
++                    text = state.resultExpression,
++                    cursor = null,
++                    fontSize = (if (scientific) fitFontSize(widthDp, Mk.stripMarkers(state.resultExpression).length, 22f, 15f) else 20f).sp * scale,
++                    color = muted,
++                    weight = FontWeight.Normal
++                )
++            }
++            Text(
++                text = state.result,
++                color = onBg,
++                textAlign = TextAlign.End,
++                style = TextStyle(
++                    fontSize = (if (scientific) fitFontSize(widthDp, state.result.length, 48f, 22f) else expressionFontSize(state.result.length).toFloat()).sp * scale,
++                    fontWeight = FontWeight.SemiBold,
++                    fontFeatureSettings = "tnum"
++                ),
++                modifier = if (state.canToggleFraction) {
++                    Modifier.clickable(role = Role.Button, onClickLabel = "Switch between fraction and decimal") {
++                        actions.onAction(KeyAction.ToggleFraction)
++                    }.defaultMinSize(minHeight = 48.dp)
++                } else Modifier
++            )
++            if (state.secondaryResult != null) {
++                Text(
++                    text = state.secondaryResult,
++                    color = muted,
++                    fontSize = 16.sp * scale,
++                    textAlign = TextAlign.End
++                )
++            }
++        } else {
++            val shownLength = Mk.stripMarkers(state.expression).length
++            val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
++            val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
++            // the basic screen only shows the cursor when it is somewhere other than the end of the line
++            val showCursor = scientific || cursor < state.expression.length
++            if (state.expression.isEmpty() && !showCursor) {
++                Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
++            } else {
++                MathText(
++                    text = state.expression,
++                    cursor = if (showCursor) cursor else null,
++                    fontSize = fontSp,
++                    color = onBg
++                )
++            }
++            if (state.error != null) {
++                Text(
++                    text = state.error,
++                    color = look.colors.error,
++                    fontSize = 18.sp * scale,
++                    textAlign = TextAlign.End
++                )
++            } else if (state.preview != null) {
++                Text(
++                    text = state.preview,
++                    color = muted,
++                    fontSize = 24.sp * scale,
++                    textAlign = TextAlign.End,
++                    style = TextStyle(fontFeatureSettings = "tnum")
++                )
++            }
++        }
++        if (state.pendingLabel != null) {
++            Text(
++                text = state.pendingLabel,
++                color = MaterialTheme.colorScheme.tertiary,
++                fontSize = 13.sp * scale,
++                textAlign = TextAlign.End
++            )
++        }
++        if (state.warning != null) {
++            Text(
++                text = state.warning,
++                color = look.colors.warning,
++                fontSize = 12.sp * scale,
++                textAlign = TextAlign.End,
++                modifier = Modifier.padding(top = 4.dp)
++            )
++        }
++    }
++}
++
+ @Composable
+ private fun DisplayHeader(state: DisplayState, actions: DisplayActions) {
+     val look = LocalCalcLook.current
+diff --git a/feature-converter/src/main/kotlin/com/tapecalc/feature/converter/ConverterScreen.kt b/feature-converter/src/main/kotlin/com/tapecalc/feature/converter/ConverterScreen.kt
+index 4bb04e3..f7404b4 100644
+--- a/feature-converter/src/main/kotlin/com/tapecalc/feature/converter/ConverterScreen.kt
++++ b/feature-converter/src/main/kotlin/com/tapecalc/feature/converter/ConverterScreen.kt
+@@ -39,8 +39,11 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+-import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
++import com.tapecalc.core.ui.getValue
++import com.tapecalc.core.ui.rememberStoredInt
++import com.tapecalc.core.ui.rememberStoredText
++import com.tapecalc.core.ui.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.platform.LocalClipboardManager
+@@ -100,18 +103,18 @@ fun ConverterScreen(
+     val categories = UnitCategory.entries
+     // One extra chip after the unit categories selects the number-system mode.
+     val numberSystemIndex = categories.size
+-    var categoryIndex by rememberSaveable { mutableStateOf(0) }
++    var categoryIndex by rememberStoredInt("convert.category", 0)
+     val numberMode = categoryIndex == numberSystemIndex
+     val category = categories[categoryIndex.coerceIn(0, categories.lastIndex)]
+     val units = remember(category) { UnitRegistry.byCategory(category) }
+ 
+-    var fromId by rememberSaveable { mutableStateOf("") }
+-    var toId by rememberSaveable { mutableStateOf("") }
+-    var input by rememberSaveable { mutableStateOf("1") }
++    var fromId by rememberStoredText("convert.from", "")
++    var toId by rememberStoredText("convert.to", "")
++    var input by rememberStoredText("convert.input", "1")
+ 
+-    var baseInput by rememberSaveable { mutableStateOf("255") }
+-    var baseFromRadix by rememberSaveable { mutableStateOf(NumberBases.DECIMAL.radix) }
+-    var baseToRadix by rememberSaveable { mutableStateOf(NumberBases.HEXADECIMAL.radix) }
++    var baseInput by rememberStoredText("convert.baseInput", "255")
++    var baseFromRadix by rememberStoredInt("convert.baseFrom", NumberBases.DECIMAL.radix)
++    var baseToRadix by rememberStoredInt("convert.baseTo", NumberBases.HEXADECIMAL.radix)
+     val baseFrom = NumberBases.all.firstOrNull { it.radix == baseFromRadix } ?: NumberBases.DECIMAL
+     val baseTo = NumberBases.all.firstOrNull { it.radix == baseToRadix } ?: NumberBases.HEXADECIMAL
+ 
+diff --git a/feature-history/src/main/kotlin/com/tapecalc/feature/history/EntryEditorDialog.kt b/feature-history/src/main/kotlin/com/tapecalc/feature/history/EntryEditorDialog.kt
+index 7e62343..05a3072 100644
+--- a/feature-history/src/main/kotlin/com/tapecalc/feature/history/EntryEditorDialog.kt
++++ b/feature-history/src/main/kotlin/com/tapecalc/feature/history/EntryEditorDialog.kt
+@@ -1,5 +1,6 @@
+ package com.tapecalc.feature.history
+ 
++import com.tapecalc.core.ui.ExpressionField
+ import androidx.compose.foundation.horizontalScroll
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+@@ -75,11 +76,12 @@ fun EntryEditorDialog(
+                 Modifier.verticalScroll(rememberScrollState()),
+                 verticalArrangement = Arrangement.spacedBy(10.dp)
+             ) {
+-                OutlinedTextField(
++                ExpressionField(
+                     value = expression,
+                     onValueChange = { expression = it },
+                     modifier = Modifier.fillMaxWidth(),
+-                    label = { Text("Expression") }
++                    label = "Expression",
++                    singleLine = false
+                 )
+                 Text(
+                     text = livePreview.text,
+diff --git a/feature-scientific/src/main/kotlin/com/tapecalc/feature/scientific/ScientificScreen.kt b/feature-scientific/src/main/kotlin/com/tapecalc/feature/scientific/ScientificScreen.kt
+index 7c9c5ad..1967c8d 100644
+--- a/feature-scientific/src/main/kotlin/com/tapecalc/feature/scientific/ScientificScreen.kt
++++ b/feature-scientific/src/main/kotlin/com/tapecalc/feature/scientific/ScientificScreen.kt
+@@ -248,7 +248,9 @@ private fun CasioRow(
+                 shiftHint = key.shift?.label,
+                 alphaHint = key.alpha?.label,
+                 highlighted = armed,
+-                minHeight = minKeyHeight
++                minHeight = minKeyHeight,
++                // While SHIFT, ALPHA or HYP is on, only the active layer is drawn; all small labels come back when it is off.
++                hideHints = shift || alpha || hyp
+             )
+         }
+     }
+@@ -372,7 +374,7 @@ fun ScientificScreen(
+             }
+         } else {
+             Column(Modifier.fillMaxSize()) {
+-                CalculatorDisplay(state, miniTape, actions, Modifier.weight(0.9f), maxTapeLines = 3, scientific = true)
++                CalculatorDisplay(state, miniTape, actions, Modifier.weight(0.9f), maxTapeLines = 4, scientific = true)
+                 ScientificKeypad(state.shift, state.alpha, state.hyp, actions.onAction, Modifier.weight(1.7f).fillMaxWidth())
+             }
+         }
+diff --git a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ConstantsPane.kt b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ConstantsPane.kt
+index 664e134..857aab1 100644
+--- a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ConstantsPane.kt
++++ b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ConstantsPane.kt
+@@ -17,8 +17,10 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+-import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
++import com.tapecalc.core.ui.rememberStoredText
++import com.tapecalc.core.ui.setValue
++import com.tapecalc.core.ui.getValue
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.text.font.FontFamily
+ import androidx.compose.ui.text.font.FontWeight
+@@ -29,7 +31,7 @@ import com.tapecalc.core.precision.NumberFormatter
+ /** The built-in constants table. Tap a row to put the constant into the calculator. */
+ @Composable
+ internal fun ConstantsPane(onUseInCalculator: (String) -> Unit, modifier: Modifier = Modifier) {
+-    var query by rememberSaveable { mutableStateOf("") }
++    var query by rememberStoredText("tool.constants.query", "")
+     val items = remember(query) {
+         val q = query.trim().lowercase()
+         Constants.all.filter {
+diff --git a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/GraphPane.kt b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/GraphPane.kt
+index 24d8b58..30d635b 100644
+--- a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/GraphPane.kt
++++ b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/GraphPane.kt
+@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
+ import androidx.compose.material3.IconButton
+ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.OutlinedButton
+-import androidx.compose.material3.OutlinedTextField
+ import androidx.compose.material3.SmallFloatingActionButton
+ import androidx.compose.material3.Surface
+ import androidx.compose.material3.Text
+@@ -38,7 +37,6 @@ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+-import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+@@ -54,6 +52,8 @@ import androidx.compose.ui.graphics.toArgb
+ import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.layout.onSizeChanged
+ import androidx.compose.ui.text.font.FontFamily
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.text.input.KeyboardType
+ import androidx.compose.ui.unit.IntSize
+ import androidx.compose.ui.unit.dp
+@@ -63,6 +63,9 @@ import com.tapecalc.core.math.graph.GraphCompile
+ import com.tapecalc.core.math.graph.GraphFunction
+ import com.tapecalc.core.math.graph.Graphing
+ import com.tapecalc.core.precision.NumberFormatter
++import com.tapecalc.core.ui.ExpressionField
++import com.tapecalc.core.ui.LocalToolStateStore
++import com.tapecalc.core.ui.rememberStoredText
+ import java.math.BigDecimal
+ import kotlin.math.abs
+ import kotlin.math.ceil
+@@ -101,6 +104,22 @@ private fun homeWindow(size: IntSize): Window {
+     return Window(-10.0, 10.0, -yr, yr)
+ }
+ 
++private fun Window.encode(): String = "$xMin,$xMax,$yMin,$yMax"
++
++private fun decodeWindow(text: String?): Window? {
++    val parts = text?.split(',')?.mapNotNull { it.toDoubleOrNull() } ?: return null
++    if (parts.size != 4) return null
++    val w = Window(parts[0], parts[1], parts[2], parts[3])
++    return if (w.xMax > w.xMin && w.yMax > w.yMin && w.isUsable()) w else null
++}
++
++/** How an equation is named on screen: its own text, shortened. */
++private fun equationName(text: String, index: Int, max: Int = 18): String {
++    val t = text.trim()
++    if (t.isEmpty()) return "Equation ${index + 1}"
++    return if (t.length > max) t.take(max - 1) + "…" else t
++}
++
+ /**
+  * Full-screen graph of up to three functions of x.
+  *
+@@ -110,12 +129,18 @@ private fun homeWindow(size: IntSize): Window {
+  */
+ @Composable
+ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modifier = Modifier) {
+-    var f1 by rememberSaveable { mutableStateOf("sin(x)") }
+-    var f2 by rememberSaveable { mutableStateOf("") }
+-    var f3 by rememberSaveable { mutableStateOf("") }
++    // The equations and the view are kept on the device, so the graph comes back as it was left.
++    val store = LocalToolStateStore.current
++    val eq1 = rememberStoredText("graph.f1", "sin(x)")
++    val eq2 = rememberStoredText("graph.f2", "")
++    val eq3 = rememberStoredText("graph.f3", "")
++    val f1 = eq1.value
++    val f2 = eq2.value
++    val f3 = eq3.value
+     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+-    var window by remember { mutableStateOf(Window(-10.0, 10.0, -6.0, 6.0)) }
+-    var placed by remember { mutableStateOf(false) }
++    val savedWindow = remember(store) { decodeWindow(store.get("graph.window")) }
++    var window by remember(store) { mutableStateOf(savedWindow ?: Window(-10.0, 10.0, -6.0, 6.0)) }
++    var placed by remember(store) { mutableStateOf(savedWindow != null) }
+     var traceX by remember { mutableStateOf<Double?>(null) }
+     var points by remember { mutableStateOf<List<String>>(emptyList()) }
+     var showEquations by remember { mutableStateOf(false) }
+@@ -127,6 +152,9 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+             delay(160)
+             interacting = false
+         }
++        // remembered once the view has stopped moving (and only after the first fit to the screen, so the
++        // starting window is never saved in place of the fitted one)
++        if (placed) store.put("graph.window", window.encode())
+     }
+ 
+     val ctx = remember(angleMode) { EvalContext(angleMode = angleMode) }
+@@ -134,6 +162,11 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+         listOf(f1, f2, f3).map { t -> t to (if (t.isBlank()) null else Graphing.compile(t, ctx)) }
+     }
+     val functions: List<GraphFunction> = compiled.mapNotNull { (it.second as? GraphCompile.Ok)?.function }
++    // A curve takes its colour from its place among the drawn curves, so labels use the same index.
++    val drawnIndexOfSlot: List<Int> = run {
++        var n = 0
++        compiled.map { (_, c) -> if (c is GraphCompile.Ok) n++ else -1 }
++    }
+ 
+     val colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.error)
+     val axisColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+@@ -213,14 +246,19 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+                         )
+                     }
+                 }
+-                // small colour keys for the curves that are drawn
+-                functions.forEachIndexed { i, f ->
+-                    Text(
+-                        "y${i + 1}",
+-                        color = colors[i % colors.size],
+-                        style = MaterialTheme.typography.labelLarge,
+-                        fontFamily = FontFamily.Monospace
+-                    )
++                // the drawn curves, named by their equations and drawn in the colour of their line
++                compiled.forEachIndexed { i, (text, c) ->
++                    if (c is GraphCompile.Ok) {
++                        Text(
++                            equationName(text, i, 10),
++                            color = colors[drawnIndexOfSlot[i] % colors.size],
++                            style = MaterialTheme.typography.labelLarge,
++                            fontFamily = FontFamily.Monospace,
++                            maxLines = 1,
++                            overflow = TextOverflow.Ellipsis,
++                            modifier = Modifier.widthIn(max = 64.dp)
++                        )
++                    }
+                 }
+             }
+             if (showEquations) {
+@@ -230,20 +268,17 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+                     tonalElevation = 4.dp
+                 ) {
+                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+-                        listOf(
+-                            Triple("y₁ =", f1, { s: String -> f1 = s.take(120) }),
+-                            Triple("y₂ =", f2, { s: String -> f2 = s.take(120) }),
+-                            Triple("y₃ =", f3, { s: String -> f3 = s.take(120) })
+-                        ).forEachIndexed { i, (label, value, set) ->
++                        listOf(eq1, eq2, eq3).forEachIndexed { i, stored ->
+                             val err = (compiled[i].second as? GraphCompile.Err)?.error?.message
+-                            OutlinedTextField(
+-                                value = value,
+-                                onValueChange = { set(it); traceX = null; points = emptyList() },
++                            ExpressionField(
++                                value = stored.value,
++                                onValueChange = { stored.value = it.take(120); traceX = null; points = emptyList() },
+                                 modifier = Modifier.fillMaxWidth(),
+-                                label = { Text(label) },
++                                label = "Equation ${i + 1}",
++                                placeholder = if (i == 0) "for example sin(x) or x^2 - 4" else "optional",
+                                 singleLine = true,
+                                 isError = err != null,
+-                                supportingText = { if (err != null) Text(err) },
++                                supportingText = err,
+                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                             )
+                         }
+@@ -257,15 +292,18 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+                             }) { Text("Fit height") }
+                             OutlinedButton(onClick = {
+                                 val out = ArrayList<String>()
+-                                functions.forEachIndexed { i, f ->
+-                                    Graphing.roots(f, window.xMin, window.xMax).take(8).forEach { out.add("y${i + 1} zero at x = ${shortNumber(it)}") }
++                                // the drawn equations, with the position each one has among the three boxes
++                                val drawn = compiled.mapIndexedNotNull { slot, (text, c) -> (c as? GraphCompile.Ok)?.let { Triple(slot, text, it.function) } }
++                                drawn.forEach { (slot, text, f) ->
++                                    val name = equationName(text, slot, 24)
++                                    Graphing.roots(f, window.xMin, window.xMax).take(8).forEach { out.add("$name: zero at x = ${shortNumber(it)}, y = 0") }
+                                     Graphing.extremes(f, window.xMin, window.xMax).take(8).forEach {
+-                                        out.add("y${i + 1} ${if (it.isMax) "peak" else "valley"} at (${shortNumber(it.x)}, ${shortNumber(it.y)})")
++                                        out.add("$name: ${if (it.isMax) "peak" else "valley"} at x = ${shortNumber(it.x)}, y = ${shortNumber(it.y)}")
+                                     }
+                                 }
+-                                for (a in functions.indices) for (b in a + 1 until functions.size) {
+-                                    Graphing.intersections(functions[a], functions[b], window.xMin, window.xMax).take(8).forEach {
+-                                        out.add("y${a + 1} meets y${b + 1} at (${shortNumber(it.first)}, ${shortNumber(it.second)})")
++                                for (a in drawn.indices) for (b in a + 1 until drawn.size) {
++                                    Graphing.intersections(drawn[a].third, drawn[b].third, window.xMin, window.xMax).take(8).forEach {
++                                        out.add("${equationName(drawn[a].second, drawn[a].first, 14)} meets ${equationName(drawn[b].second, drawn[b].first, 14)} at x = ${shortNumber(it.first)}, y = ${shortNumber(it.second)}")
+                                     }
+                                 }
+                                 points = if (out.isEmpty()) listOf("No special points in this view.") else out
+@@ -313,11 +351,20 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
+         ) {
+             Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                 if (tx != null && functions.isNotEmpty()) {
+-                    functions.forEachIndexed { i, f ->
++                    // for each drawn equation: the equation, the value of x that was tapped, and the value of y there
++                    compiled.forEachIndexed { slot, (text, c) ->
++                        val f = (c as? GraphCompile.Ok)?.function ?: return@forEachIndexed
++                        Text(
++                            equationName(text, slot, 40),
++                            fontFamily = FontFamily.Monospace,
++                            fontWeight = FontWeight.Bold,
++                            color = colors[drawnIndexOfSlot[slot] % colors.size],
++                            style = MaterialTheme.typography.bodySmall
++                        )
+                         Text(
+-                            "y${i + 1}(${shortNumber(tx)}) = ${shortNumber(f.at(tx))}   slope ${shortNumber(Graphing.slopeAt(f, tx))}",
++                            "  x = ${shortNumber(tx)}   y = ${shortNumber(f.at(tx))}   slope = ${shortNumber(Graphing.slopeAt(f, tx))}",
+                             fontFamily = FontFamily.Monospace,
+-                            color = colors[i % colors.size],
++                            color = colors[drawnIndexOfSlot[slot] % colors.size],
+                             style = MaterialTheme.typography.bodySmall
+                         )
+                     }
+diff --git a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/QrPane.kt b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/QrPane.kt
+index 75187a1..383d542 100644
+--- a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/QrPane.kt
++++ b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/QrPane.kt
+@@ -17,8 +17,10 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+-import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
++import com.tapecalc.core.ui.rememberStoredInt
++import com.tapecalc.core.ui.setValue
++import com.tapecalc.core.ui.getValue
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.geometry.Offset
+ import androidx.compose.ui.geometry.Size
+@@ -35,7 +37,7 @@ import com.tapecalc.core.math.qr.QrMatrix
+  */
+ @Composable
+ internal fun QrPane(text: String, onTextChange: (String) -> Unit, modifier: Modifier = Modifier) {
+-    var eccIndex by rememberSaveable { mutableStateOf(1) }
++    var eccIndex by rememberStoredInt("tool.qr.ecc", 1)
+     val ecc = if (eccIndex == 0) QrEcc.L else QrEcc.M
+     val clipboard = LocalClipboardManager.current
+ 
+diff --git a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ToolsScreen.kt b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ToolsScreen.kt
+index f1cc337..13a5a0f 100644
+--- a/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ToolsScreen.kt
++++ b/feature-tools/src/main/kotlin/com/tapecalc/feature/tools/ToolsScreen.kt
+@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
+ import androidx.compose.material3.OutlinedTextField
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.Composable
++import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.mutableStateMapOf
+ import androidx.compose.runtime.mutableStateOf
+@@ -69,10 +70,13 @@ import androidx.compose.ui.unit.sp
+ import com.tapecalc.core.math.AngleMode
+ import com.tapecalc.core.math.EvalContext
+ import com.tapecalc.core.math.tools.ResultLine
++import com.tapecalc.core.math.tools.ToolHistory
+ import com.tapecalc.core.math.tools.ToolInput
+ import com.tapecalc.core.math.tools.ToolResult
+ import com.tapecalc.core.math.tools.ToolSpec
+ import com.tapecalc.core.math.tools.Tools
++import com.tapecalc.core.ui.ExpressionField
++import com.tapecalc.core.ui.LocalToolStateStore
+ 
+ private const val GRAPH_ID = "graph"
+ private const val CONSTANTS_ID = "constants"
+@@ -119,15 +123,19 @@ private val hubEntries: List<HubEntry> =
+ @Composable
+ fun ToolsScreen(
+     angleMode: AngleMode,
+-    /** The id of the open tool, or "" for the list. Kept by the caller so it is never restored by itself. */
+-    current: String,
++    /** The id of the open tool, or "" for the list. The caller keeps it on the device so it is still open when the person returns. */
++    currentTool: String,
+     onCurrentChange: (String) -> Unit,
+     qrText: String,
+     onQrTextChange: (String) -> Unit,
+     onUseInCalculator: (String) -> Unit,
++    /** Called with (tool title, what was entered, result on one line, result one value per line) after each calculation. */
++    onSaveToTape: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+     modifier: Modifier = Modifier
+ ) {
+     val ctx = remember(angleMode) { EvalContext(angleMode = angleMode) }
++    // A remembered id that no longer exists (after an update) just shows the list.
++    val current = if (hubEntries.any { it.id == currentTool }) currentTool else ""
+ 
+     // The graph takes the whole area (no title bar, no padding); it has its own back button.
+     if (current == GRAPH_ID) {
+@@ -163,6 +171,7 @@ fun ToolsScreen(
+                             ctx = ctx,
+                             onUseInCalculator = onUseInCalculator,
+                             onMakeQr = { onQrTextChange(it); onCurrentChange(QR_ID) },
++                            onSaveToTape = onSaveToTape,
+                             modifier = Modifier.weight(1f)
+                         )
+                     }
+@@ -215,24 +224,51 @@ private fun ToolsHub(onOpen: (String) -> Unit) {
+     }
+ }
+ 
+-/** Draws any [ToolSpec]: its text boxes, its chips, a Calculate button and the answer. */
++/**
++ * Draws any [ToolSpec]: its text boxes, its chips, a Calculate button and the answer.
++ *
++ * Everything the person typed or picked, and whether an answer was showing, is kept on the device as it changes, so a
++ * tool comes back exactly as it was left: after switching tabs, leaving the app, or closing it. Every successful
++ * Calculate is also written to the tape.
++ */
+ @Composable
+ private fun FormTool(
+     spec: ToolSpec,
+     ctx: EvalContext,
+     onUseInCalculator: (String) -> Unit,
+     onMakeQr: (String) -> Unit,
++    onSaveToTape: (String, String, String, String) -> Unit,
+     modifier: Modifier = Modifier
+ ) {
+-    val texts = remember(spec.id) {
+-        mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.id, it.default) } }
++    val store = LocalToolStateStore.current
++    val textKey = { fieldId: String -> "tool.${spec.id}.t.$fieldId" }
++    val choiceKey = { optionId: String -> "tool.${spec.id}.c.$optionId" }
++    val ranKey = "tool.${spec.id}.ran"
++
++    val texts = remember(spec.id, store) {
++        mutableStateMapOf<String, String>().apply { spec.fields.forEach { put(it.id, store.get(textKey(it.id)) ?: it.default) } }
+     }
+-    val choices = remember(spec.id) {
+-        mutableStateMapOf<String, Int>().apply { spec.options.forEach { put(it.id, it.default) } }
++    val choices = remember(spec.id, store) {
++        mutableStateMapOf<String, Int>().apply {
++            spec.options.forEach { put(it.id, store.get(choiceKey(it.id))?.toIntOrNull()?.takeIf { i -> i in it.choices.indices } ?: it.default) }
++        }
+     }
+     var result by remember(spec.id) { mutableStateOf<ToolResult?>(null) }
+     val clipboard = LocalClipboardManager.current
+ 
++    fun compute(): ToolResult = try {
++        spec.run(ToolInput(texts.toMap(), choices.toMap(), ctx))
++    } catch (e: Exception) {
++        ToolResult.Err("Could not work that out. Please check the input.")
++    } catch (e: StackOverflowError) {
++        ToolResult.Err("That input is too complicated.")
++    }
++
++    // Coming back to a tool that was showing an answer: work the answer out again from the saved boxes.
++    LaunchedEffect(spec.id, store) {
++        if (store.get(ranKey) == "1") result = compute()
++    }
++
+     Column(
+         modifier = modifier.verticalScroll(rememberScrollState()),
+         verticalArrangement = Arrangement.spacedBy(10.dp)
+@@ -252,7 +288,12 @@ private fun FormTool(
+                 option.choices.forEachIndexed { index, label ->
+                     FilterChip(
+                         selected = (choices[option.id] ?: option.default) == index,
+-                        onClick = { choices[option.id] = index; result = null },
++                        onClick = {
++                            choices[option.id] = index
++                            store.put(choiceKey(option.id), index.toString())
++                            store.put(ranKey, null)
++                            result = null
++                        },
+                         label = { Text(label) }
+                     )
+                 }
+@@ -260,12 +301,16 @@ private fun FormTool(
+         }
+ 
+         spec.fields.forEach { field ->
+-            OutlinedTextField(
++            ExpressionField(
+                 value = texts[field.id] ?: "",
+-                onValueChange = { texts[field.id] = it.take(600) },
++                onValueChange = {
++                    val v = it.take(600)
++                    texts[field.id] = v
++                    store.put(textKey(field.id), v)
++                },
+                 modifier = Modifier.fillMaxWidth(),
+-                label = { Text(field.label) },
+-                placeholder = { if (field.hint.isNotEmpty()) Text(field.hint) },
++                label = field.label,
++                placeholder = field.hint.ifEmpty { null },
+                 singleLine = !field.multiline,
+                 minLines = if (field.multiline) 3 else 1,
+                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+@@ -274,12 +319,12 @@ private fun FormTool(
+ 
+         Button(
+             onClick = {
+-                result = try {
+-                    spec.run(ToolInput(texts.toMap(), choices.toMap(), ctx))
+-                } catch (e: Exception) {
+-                    ToolResult.Err("Could not work that out. Please check the input.")
+-                } catch (e: StackOverflowError) {
+-                    ToolResult.Err("That input is too complicated.")
++                val computed = compute()
++                result = computed
++                store.put(ranKey, "1")
++                // every successful calculation is also written to the tape
++                ToolHistory.record(spec, texts.toMap(), choices.toMap(), computed)?.let {
++                    onSaveToTape(spec.title, it.input, it.summary, it.full)
+                 }
+             },
+             modifier = Modifier.fillMaxWidth()
