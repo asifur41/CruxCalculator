@@ -8,15 +8,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tapecalc.core.data.settings.AppSettings
 import com.tapecalc.core.ui.ButtonShape
 import com.tapecalc.core.ui.KeypadStyle
+import com.tapecalc.core.ui.LocalToolStateStore
 import com.tapecalc.core.ui.ThemeSettings
 import com.tapecalc.core.ui.TapeTheme
+import com.tapecalc.pro.ui.PrefsToolStateStore
 import com.tapecalc.core.ui.resolveTheme
 import com.tapecalc.pro.presentation.CalculatorViewModel
 import com.tapecalc.pro.ui.AppRoot
@@ -55,7 +59,11 @@ class MainActivity : ComponentActivity() {
                 // Keep the window the same colour as the app so nothing can show through during transitions.
                 val background = MaterialTheme.colorScheme.background.toArgb()
                 SideEffect { window.setBackgroundDrawable(ColorDrawable(background)) }
-                AppRoot(viewModel)
+                // what the person typed in the tools, and which screen they were on, is kept on the device
+                val stateStore = remember { PrefsToolStateStore(applicationContext) }
+                CompositionLocalProvider(LocalToolStateStore provides stateStore) {
+                    AppRoot(viewModel)
+                }
             }
         }
     }

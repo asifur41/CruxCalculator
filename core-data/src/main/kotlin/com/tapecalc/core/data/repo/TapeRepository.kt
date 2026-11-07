@@ -12,6 +12,7 @@ import com.tapecalc.core.data.domain.ExportFormat
 import com.tapecalc.core.data.domain.HistoryEntry
 import com.tapecalc.core.data.domain.HistoryExporter
 import com.tapecalc.core.data.domain.SubmitResult
+import com.tapecalc.core.data.domain.TOOL_RESULT_MARKER
 import com.tapecalc.core.data.domain.TapeRecalculator
 import com.tapecalc.core.data.domain.VariableItem
 import com.tapecalc.core.data.domain.Workspace
@@ -144,6 +145,26 @@ class TapeRepository(
                 SubmitResult.Added(draft.copy(id = id), r)
             }
         }
+    }
+
+    /**
+     * Records a result from the Tools tab on the tape. [input] is the one-line description of what was entered,
+     * [summary] the result on one line and [full] the result with one line per value. The entry is a record only:
+     * `ans` and the tape recalculation skip it.
+     */
+    suspend fun addToolEntry(workspaceId: Long, title: String, input: String, summary: String, full: String): Long {
+        val now = clock()
+        val entry = HistoryEntry(
+            workspaceId = workspaceId,
+            expression = input.take(400),
+            resultText = summary.take(300),
+            resultFull = full.take(2000),
+            resultValue = TOOL_RESULT_MARKER,
+            label = title.take(40),
+            createdAt = now,
+            updatedAt = now
+        )
+        return history.insert(entry.toEntity())
     }
 
     /**

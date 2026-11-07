@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -115,124 +117,168 @@ fun CalculatorDisplay(
 ) {
     val look = LocalCalcLook.current
     val scale = look.fontScale
-    val onBg = MaterialTheme.colorScheme.onBackground
-    val muted = look.colors.muted
 
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         DisplayHeader(state, actions)
 
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val widthDp = maxWidth.value
-            Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
-                horizontalAlignment = Alignment.End
-            ) {
-                miniTape.takeLast(maxTapeLines).forEach { line ->
-                    Text(
-                        text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
-                        color = muted,
-                        fontSize = 14.sp * scale,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+            val displayMaxHeight = maxHeight
+            if (scientific) {
+                // Two zones. The earlier calculations start right under the top buttons; the line being worked on sits
+                // at the bottom and always has room for at least two lines of the large text.
+                val workMin = (44f * scale * 2.4f).dp
+                Column(Modifier.fillMaxSize()) {
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                        val lineHeightDp = 21f * scale
+                        val fit = (maxHeight.value / lineHeightDp).toInt().coerceAtLeast(0)
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                            HistoryLines(miniTape.takeLast(minOf(maxTapeLines, fit)), true, actions)
+                        }
+                    }
+                    Box(
                         modifier = Modifier
-                            .clickable(
-                                onClickLabel = if (scientific) "Edit this line" else "Open tape",
-                                onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
-                            )
-                            .padding(vertical = 2.dp)
-                    )
+                            .fillMaxWidth()
+                            .heightIn(min = workMin, max = displayMaxHeight * 0.8f)
+                            .verticalScroll(rememberScrollState(), reverseScrolling = true),
+                        contentAlignment = Alignment.BottomEnd
+                    ) {
+                        WorkingArea(state, true, widthDp, actions)
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-
-                Column(
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    horizontalAlignment = Alignment.End
-                ) {
-                    if (state.result != null) {
-                        if (!state.resultExpression.isNullOrBlank()) {
-                            MathText(
-                                text = state.resultExpression,
-                                cursor = null,
-                                fontSize = (if (scientific) fitFontSize(widthDp, Mk.stripMarkers(state.resultExpression).length, 22f, 15f) else 20f).sp * scale,
-                                color = muted,
-                                weight = FontWeight.Normal
-                            )
-                        }
-                        Text(
-                            text = state.result,
-                            color = onBg,
-                            textAlign = TextAlign.End,
-                            style = TextStyle(
-                                fontSize = (if (scientific) fitFontSize(widthDp, state.result.length, 48f, 22f) else expressionFontSize(state.result.length).toFloat()).sp * scale,
-                                fontWeight = FontWeight.SemiBold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            modifier = if (state.canToggleFraction) {
-                                Modifier.clickable(role = Role.Button, onClickLabel = "Switch between fraction and decimal") {
-                                    actions.onAction(KeyAction.ToggleFraction)
-                                }.defaultMinSize(minHeight = 48.dp)
-                            } else Modifier
-                        )
-                        if (state.secondaryResult != null) {
-                            Text(
-                                text = state.secondaryResult,
-                                color = muted,
-                                fontSize = 16.sp * scale,
-                                textAlign = TextAlign.End
-                            )
-                        }
-                    } else {
-                        val shownLength = Mk.stripMarkers(state.expression).length
-                        val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
-                        val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
-                        // the basic screen only shows the cursor when it is somewhere other than the end of the line
-                        val showCursor = scientific || cursor < state.expression.length
-                        if (state.expression.isEmpty() && !showCursor) {
-                            Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
-                        } else {
-                            MathText(
-                                text = state.expression,
-                                cursor = if (showCursor) cursor else null,
-                                fontSize = fontSp,
-                                color = onBg
-                            )
-                        }
-                        if (state.error != null) {
-                            Text(
-                                text = state.error,
-                                color = look.colors.error,
-                                fontSize = 18.sp * scale,
-                                textAlign = TextAlign.End
-                            )
-                        } else if (state.preview != null) {
-                            Text(
-                                text = state.preview,
-                                color = muted,
-                                fontSize = 24.sp * scale,
-                                textAlign = TextAlign.End,
-                                style = TextStyle(fontFeatureSettings = "tnum")
-                            )
-                        }
-                    }
-                    if (state.pendingLabel != null) {
-                        Text(
-                            text = state.pendingLabel,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            fontSize = 13.sp * scale,
-                            textAlign = TextAlign.End
-                        )
-                    }
-                    if (state.warning != null) {
-                        Text(
-                            text = state.warning,
-                            color = look.colors.warning,
-                            fontSize = 12.sp * scale,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        HistoryLines(miniTape.takeLast(maxTapeLines), false, actions)
+                        Spacer(Modifier.height(8.dp))
+                        WorkingArea(state, false, widthDp, actions)
                     }
                 }
             }
+        }
+    }
+}
+
+/** The earlier calculations, oldest first, as small muted lines. */
+@Composable
+private fun HistoryLines(lines: List<MiniTapeLine>, scientific: Boolean, actions: DisplayActions) {
+    val look = LocalCalcLook.current
+    val scale = look.fontScale
+    val muted = look.colors.muted
+    lines.forEach { line ->
+        Text(
+            text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
+            color = muted,
+            fontSize = 14.sp * scale,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .clickable(
+                    onClickLabel = if (scientific) "Edit this line" else "Open tape",
+                    onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
+                )
+                .padding(vertical = 2.dp)
+        )
+    }
+}
+
+/** The line being typed, or the result just calculated, with its preview, error and warnings. */
+@Composable
+private fun WorkingArea(state: DisplayState, scientific: Boolean, widthDp: Float, actions: DisplayActions) {
+    val look = LocalCalcLook.current
+    val scale = look.fontScale
+    val onBg = MaterialTheme.colorScheme.onBackground
+    val muted = look.colors.muted
+
+    Column(
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.End
+    ) {
+        if (state.result != null) {
+            if (!state.resultExpression.isNullOrBlank()) {
+                MathText(
+                    text = state.resultExpression,
+                    cursor = null,
+                    fontSize = (if (scientific) fitFontSize(widthDp, Mk.stripMarkers(state.resultExpression).length, 22f, 15f) else 20f).sp * scale,
+                    color = muted,
+                    weight = FontWeight.Normal
+                )
+            }
+            Text(
+                text = state.result,
+                color = onBg,
+                textAlign = TextAlign.End,
+                style = TextStyle(
+                    fontSize = (if (scientific) fitFontSize(widthDp, state.result.length, 48f, 22f) else expressionFontSize(state.result.length).toFloat()).sp * scale,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum"
+                ),
+                modifier = if (state.canToggleFraction) {
+                    Modifier.clickable(role = Role.Button, onClickLabel = "Switch between fraction and decimal") {
+                        actions.onAction(KeyAction.ToggleFraction)
+                    }.defaultMinSize(minHeight = 48.dp)
+                } else Modifier
+            )
+            if (state.secondaryResult != null) {
+                Text(
+                    text = state.secondaryResult,
+                    color = muted,
+                    fontSize = 16.sp * scale,
+                    textAlign = TextAlign.End
+                )
+            }
+        } else {
+            val shownLength = Mk.stripMarkers(state.expression).length
+            val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
+            val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
+            // the basic screen only shows the cursor when it is somewhere other than the end of the line
+            val showCursor = scientific || cursor < state.expression.length
+            if (state.expression.isEmpty() && !showCursor) {
+                Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
+            } else {
+                MathText(
+                    text = state.expression,
+                    cursor = if (showCursor) cursor else null,
+                    fontSize = fontSp,
+                    color = onBg
+                )
+            }
+            if (state.error != null) {
+                Text(
+                    text = state.error,
+                    color = look.colors.error,
+                    fontSize = 18.sp * scale,
+                    textAlign = TextAlign.End
+                )
+            } else if (state.preview != null) {
+                Text(
+                    text = state.preview,
+                    color = muted,
+                    fontSize = 24.sp * scale,
+                    textAlign = TextAlign.End,
+                    style = TextStyle(fontFeatureSettings = "tnum")
+                )
+            }
+        }
+        if (state.pendingLabel != null) {
+            Text(
+                text = state.pendingLabel,
+                color = MaterialTheme.colorScheme.tertiary,
+                fontSize = 13.sp * scale,
+                textAlign = TextAlign.End
+            )
+        }
+        if (state.warning != null) {
+            Text(
+                text = state.warning,
+                color = look.colors.warning,
+                fontSize = 12.sp * scale,
+                textAlign = TextAlign.End,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

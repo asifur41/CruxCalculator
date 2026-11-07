@@ -421,6 +421,16 @@ class CalculatorViewModel @Inject constructor(
         _ui.value = CalcUiState(expression = text.take(InputEditor.MAX_LENGTH))
     }
 
+    /**
+     * Writes a Tools-tab result on the tape of the open workspace. It is a record only: it never becomes `ans` and is
+     * not recalculated. [title] names the tool, [input] is what was entered, [summary] the result on one line and
+     * [full] the result with one value per line.
+     */
+    fun saveToolResult(title: String, input: String, summary: String, full: String) {
+        val wid = activeWorkspace.value?.id ?: return
+        viewModelScope.launch { repo.addToolEntry(wid, title, input, summary, full) }
+    }
+
     fun submitText(text: String) {
         setExpression(text)
         calculate()

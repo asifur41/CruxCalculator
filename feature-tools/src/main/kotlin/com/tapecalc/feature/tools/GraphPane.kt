@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,7 +37,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +52,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -63,6 +63,9 @@ import com.tapecalc.core.math.graph.GraphCompile
 import com.tapecalc.core.math.graph.GraphFunction
 import com.tapecalc.core.math.graph.Graphing
 import com.tapecalc.core.precision.NumberFormatter
+import com.tapecalc.core.ui.ExpressionField
+import com.tapecalc.core.ui.LocalToolStateStore
+import com.tapecalc.core.ui.rememberStoredText
 import java.math.BigDecimal
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -101,6 +104,22 @@ private fun homeWindow(size: IntSize): Window {
     return Window(-10.0, 10.0, -yr, yr)
 }
 
+private fun Window.encode(): String = "$xMin,$xMax,$yMin,$yMax"
+
+private fun decodeWindow(text: String?): Window? {
+    val parts = text?.split(',')?.mapNotNull { it.toDoubleOrNull() } ?: return null
+    if (parts.size != 4) return null
+    val w = Window(parts[0], parts[1], parts[2], parts[3])
+    return if (w.xMax > w.xMin && w.yMax > w.yMin && w.isUsable()) w else null
+}
+
+/** How an equation is named on screen: its own text, shortened. */
+private fun equationName(text: String, index: Int, max: Int = 18): String {
+    val t = text.trim()
+    if (t.isEmpty()) return "Equation ${index + 1}"
+    return if (t.length > max) t.take(max - 1) + "…" else t
+}
+
 /**
  * Full-screen graph of up to three functions of x.
  *
@@ -110,12 +129,18 @@ private fun homeWindow(size: IntSize): Window {
  */
 @Composable
 internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    var f1 by rememberSaveable { mutableStateOf("sin(x)") }
-    var f2 by rememberSaveable { mutableStateOf("") }
-    var f3 by rememberSaveable { mutableStateOf("") }
+    // The equations and the view are kept on the device, so the graph comes back as it was left.
+    val store = LocalToolStateStore.current
+    val eq1 = rememberStoredText("graph.f1", "sin(x)")
+    val eq2 = rememberStoredText("graph.f2", "")
+    val eq3 = rememberStoredText("graph.f3", "")
+    val f1 = eq1.value
+    val f2 = eq2.value
+    val f3 = eq3.value
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-    var window by remember { mutableStateOf(Window(-10.0, 10.0, -6.0, 6.0)) }
-    var placed by remember { mutableStateOf(false) }
+    val savedWindow = remember(store) { decodeWindow(store.get("graph.window")) }
+    var window by remember(store) { mutableStateOf(savedWindow ?: Window(-10.0, 10.0, -6.0, 6.0)) }
+    var placed by remember(store) { mutableStateOf(savedWindow != null) }
     var traceX by remember { mutableStateOf<Double?>(null) }
     var points by remember { mutableStateOf<List<String>>(emptyList()) }
     var showEquations by remember { mutableStateOf(false) }
@@ -127,6 +152,9 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
             delay(160)
             interacting = false
         }
+        // remembered once the view has stopped moving (and only after the first fit to the screen, so the
+        // starting window is never saved in place of the fitted one)
+        if (placed) store.put("graph.window", window.encode())
     }
 
     val ctx = remember(angleMode) { EvalContext(angleMode = angleMode) }
@@ -134,6 +162,11 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
         listOf(f1, f2, f3).map { t -> t to (if (t.isBlank()) null else Graphing.compile(t, ctx)) }
     }
     val functions: List<GraphFunction> = compiled.mapNotNull { (it.second as? GraphCompile.Ok)?.function }
+    // A curve takes its colour from its place among the drawn curves, so labels use the same index.
+    val drawnIndexOfSlot: List<Int> = run {
+        var n = 0
+        compiled.map { (_, c) -> if (c is GraphCompile.Ok) n++ else -1 }
+    }
 
     val colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.error)
     val axisColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
@@ -213,14 +246,19 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
                         )
                     }
                 }
-                // small colour keys for the curves that are drawn
-                functions.forEachIndexed { i, f ->
-                    Text(
-                        "y${i + 1}",
-                        color = colors[i % colors.size],
-                        style = MaterialTheme.typography.labelLarge,
-                        fontFamily = FontFamily.Monospace
-                    )
+                // the drawn curves, named by their equations and drawn in the colour of their line
+                compiled.forEachIndexed { i, (text, c) ->
+                    if (c is GraphCompile.Ok) {
+                        Text(
+                            equationName(text, i, 10),
+                            color = colors[drawnIndexOfSlot[i] % colors.size],
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 64.dp)
+                        )
+                    }
                 }
             }
             if (showEquations) {
@@ -230,20 +268,17 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
                     tonalElevation = 4.dp
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(
-                            Triple("y₁ =", f1, { s: String -> f1 = s.take(120) }),
-                            Triple("y₂ =", f2, { s: String -> f2 = s.take(120) }),
-                            Triple("y₃ =", f3, { s: String -> f3 = s.take(120) })
-                        ).forEachIndexed { i, (label, value, set) ->
+                        listOf(eq1, eq2, eq3).forEachIndexed { i, stored ->
                             val err = (compiled[i].second as? GraphCompile.Err)?.error?.message
-                            OutlinedTextField(
-                                value = value,
-                                onValueChange = { set(it); traceX = null; points = emptyList() },
+                            ExpressionField(
+                                value = stored.value,
+                                onValueChange = { stored.value = it.take(120); traceX = null; points = emptyList() },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text(label) },
+                                label = "Equation ${i + 1}",
+                                placeholder = if (i == 0) "for example sin(x) or x^2 - 4" else "optional",
                                 singleLine = true,
                                 isError = err != null,
-                                supportingText = { if (err != null) Text(err) },
+                                supportingText = err,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                             )
                         }
@@ -257,15 +292,18 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
                             }) { Text("Fit height") }
                             OutlinedButton(onClick = {
                                 val out = ArrayList<String>()
-                                functions.forEachIndexed { i, f ->
-                                    Graphing.roots(f, window.xMin, window.xMax).take(8).forEach { out.add("y${i + 1} zero at x = ${shortNumber(it)}") }
+                                // the drawn equations, with the position each one has among the three boxes
+                                val drawn = compiled.mapIndexedNotNull { slot, (text, c) -> (c as? GraphCompile.Ok)?.let { Triple(slot, text, it.function) } }
+                                drawn.forEach { (slot, text, f) ->
+                                    val name = equationName(text, slot, 24)
+                                    Graphing.roots(f, window.xMin, window.xMax).take(8).forEach { out.add("$name: zero at x = ${shortNumber(it)}, y = 0") }
                                     Graphing.extremes(f, window.xMin, window.xMax).take(8).forEach {
-                                        out.add("y${i + 1} ${if (it.isMax) "peak" else "valley"} at (${shortNumber(it.x)}, ${shortNumber(it.y)})")
+                                        out.add("$name: ${if (it.isMax) "peak" else "valley"} at x = ${shortNumber(it.x)}, y = ${shortNumber(it.y)}")
                                     }
                                 }
-                                for (a in functions.indices) for (b in a + 1 until functions.size) {
-                                    Graphing.intersections(functions[a], functions[b], window.xMin, window.xMax).take(8).forEach {
-                                        out.add("y${a + 1} meets y${b + 1} at (${shortNumber(it.first)}, ${shortNumber(it.second)})")
+                                for (a in drawn.indices) for (b in a + 1 until drawn.size) {
+                                    Graphing.intersections(drawn[a].third, drawn[b].third, window.xMin, window.xMax).take(8).forEach {
+                                        out.add("${equationName(drawn[a].second, drawn[a].first, 14)} meets ${equationName(drawn[b].second, drawn[b].first, 14)} at x = ${shortNumber(it.first)}, y = ${shortNumber(it.second)}")
                                     }
                                 }
                                 points = if (out.isEmpty()) listOf("No special points in this view.") else out
@@ -313,11 +351,20 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
         ) {
             Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (tx != null && functions.isNotEmpty()) {
-                    functions.forEachIndexed { i, f ->
+                    // for each drawn equation: the equation, the value of x that was tapped, and the value of y there
+                    compiled.forEachIndexed { slot, (text, c) ->
+                        val f = (c as? GraphCompile.Ok)?.function ?: return@forEachIndexed
                         Text(
-                            "y${i + 1}(${shortNumber(tx)}) = ${shortNumber(f.at(tx))}   slope ${shortNumber(Graphing.slopeAt(f, tx))}",
+                            equationName(text, slot, 40),
                             fontFamily = FontFamily.Monospace,
-                            color = colors[i % colors.size],
+                            fontWeight = FontWeight.Bold,
+                            color = colors[drawnIndexOfSlot[slot] % colors.size],
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            "  x = ${shortNumber(tx)}   y = ${shortNumber(f.at(tx))}   slope = ${shortNumber(Graphing.slopeAt(f, tx))}",
+                            fontFamily = FontFamily.Monospace,
+                            color = colors[drawnIndexOfSlot[slot] % colors.size],
                             style = MaterialTheme.typography.bodySmall
                         )
                     }

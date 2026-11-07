@@ -248,7 +248,9 @@ private fun CasioRow(
                 shiftHint = key.shift?.label,
                 alphaHint = key.alpha?.label,
                 highlighted = armed,
-                minHeight = minKeyHeight
+                minHeight = minKeyHeight,
+                // While SHIFT, ALPHA or HYP is on, only the active layer is drawn; all small labels come back when it is off.
+                hideHints = shift || alpha || hyp
             )
         }
     }
@@ -372,7 +374,7 @@ fun ScientificScreen(
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                CalculatorDisplay(state, miniTape, actions, Modifier.weight(0.9f), maxTapeLines = 3, scientific = true)
+                CalculatorDisplay(state, miniTape, actions, Modifier.weight(0.9f), maxTapeLines = 4, scientific = true)
                 ScientificKeypad(state.shift, state.alpha, state.hyp, actions.onAction, Modifier.weight(1.7f).fillMaxWidth())
             }
         }

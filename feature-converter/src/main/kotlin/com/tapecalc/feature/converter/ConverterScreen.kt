@@ -39,8 +39,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.tapecalc.core.ui.getValue
+import com.tapecalc.core.ui.rememberStoredInt
+import com.tapecalc.core.ui.rememberStoredText
+import com.tapecalc.core.ui.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -100,18 +103,18 @@ fun ConverterScreen(
     val categories = UnitCategory.entries
     // One extra chip after the unit categories selects the number-system mode.
     val numberSystemIndex = categories.size
-    var categoryIndex by rememberSaveable { mutableStateOf(0) }
+    var categoryIndex by rememberStoredInt("convert.category", 0)
     val numberMode = categoryIndex == numberSystemIndex
     val category = categories[categoryIndex.coerceIn(0, categories.lastIndex)]
     val units = remember(category) { UnitRegistry.byCategory(category) }
 
-    var fromId by rememberSaveable { mutableStateOf("") }
-    var toId by rememberSaveable { mutableStateOf("") }
-    var input by rememberSaveable { mutableStateOf("1") }
+    var fromId by rememberStoredText("convert.from", "")
+    var toId by rememberStoredText("convert.to", "")
+    var input by rememberStoredText("convert.input", "1")
 
-    var baseInput by rememberSaveable { mutableStateOf("255") }
-    var baseFromRadix by rememberSaveable { mutableStateOf(NumberBases.DECIMAL.radix) }
-    var baseToRadix by rememberSaveable { mutableStateOf(NumberBases.HEXADECIMAL.radix) }
+    var baseInput by rememberStoredText("convert.baseInput", "255")
+    var baseFromRadix by rememberStoredInt("convert.baseFrom", NumberBases.DECIMAL.radix)
+    var baseToRadix by rememberStoredInt("convert.baseTo", NumberBases.HEXADECIMAL.radix)
     val baseFrom = NumberBases.all.firstOrNull { it.radix == baseFromRadix } ?: NumberBases.DECIMAL
     val baseTo = NumberBases.all.firstOrNull { it.radix == baseToRadix } ?: NumberBases.HEXADECIMAL
 
