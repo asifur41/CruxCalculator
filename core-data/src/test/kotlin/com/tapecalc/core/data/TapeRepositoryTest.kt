@@ -183,6 +183,76 @@ class TapeRepositoryTest {
         assertTrue(repo.observeWorkspaces().first().any { it.name == "Side project 2" })
     }
 
+    // ------------------------------------------------------------ angle unit changed while a result is on screen
+
+    @Test
+    fun reevaluateRerunsAnEntryInTheNewAngleUnit() = runBlocking {
+        val a = add("sin(60)", AngleMode.DEG)
+        assertEquals("√3/2", a.entry.fraction)
+
+        val r = repo.reevaluateEntry(a.entry.id, AngleMode.RAD)
+        assertTrue(r is SubmitResult.Added)
+        r as SubmitResult.Added
+        // the result handed back for the screen is the radian one: a decimal, no radical
+        assertNull(r.result.exactForm)
+        assertTrue(r.result.display, r.result.display.startsWith("-0.30481062110221"))
+        // and the tape entry now says the same, in the new unit
+        val e = tape().single()
+        assertEquals(AngleMode.RAD, e.angleMode)
+        assertNull(e.fraction)
+        assertEquals(r.result.display, e.resultText)
+        assertEquals(r.entry, e)
+    }
+
+    @Test
+    fun reevaluateGoesBackAndForthBetweenUnits() = runBlocking {
+        val a = add("sin(30)", AngleMode.DEG)
+        assertEquals("0.5", a.entry.resultText)
+        repo.reevaluateEntry(a.entry.id, AngleMode.RAD)
+        assertTrue(tape().single().resultText.startsWith("-0.98803162409286"))
+        repo.reevaluateEntry(a.entry.id, AngleMode.DEG)
+        val e = tape().single()
+        assertEquals("0.5", e.resultText)
+        assertEquals("1/2", e.fraction)
+        assertEquals(AngleMode.DEG, e.angleMode)
+    }
+
+    @Test
+    fun reevaluateLeavesAnAngleIndependentEntryAlone() = runBlocking {
+        val a = add("2+2", AngleMode.DEG)
+        val before = tape().single()
+        val r = repo.reevaluateEntry(a.entry.id, AngleMode.RAD)
+        assertTrue(r is SubmitResult.Added)
+        assertEquals("4", (r as SubmitResult.Added).result.display)
+        assertEquals(before, tape().single())
+    }
+
+    @Test
+    fun reevaluateKeepsTheEntryWhenTheNewUnitCannotCalculateIt() = runBlocking {
+        // tan(90) is fine in radians but undefined in degrees
+        val a = add("tan(90)", AngleMode.RAD)
+        val before = tape().single()
+        val r = repo.reevaluateEntry(a.entry.id, AngleMode.DEG)
+        assertTrue(r is SubmitResult.Failed)
+        assertEquals(before, tape().single())
+    }
+
+    @Test
+    fun reevaluateUpdatesLaterEntriesThatUseAns() = runBlocking {
+        val first = add("sin(60)", AngleMode.DEG)
+        add("ans*2", AngleMode.DEG)
+        assertTrue(tape()[1].resultText.startsWith("1.7320508075688"))
+        repo.reevaluateEntry(first.entry.id, AngleMode.RAD)
+        val after = tape()
+        assertTrue(after[1].resultText, after[1].resultText.startsWith("-0.6096212422044"))
+        assertEquals(EntryStatus.UPDATED, after[1].status)
+    }
+
+    @Test
+    fun reevaluateOfAMissingEntryIsNull() = runBlocking {
+        assertNull(repo.reevaluateEntry(12345L, AngleMode.RAD))
+    }
+
     @Test
     fun exportProducesAllFormats() = runBlocking {
         val a = add("2+3")

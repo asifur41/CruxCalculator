@@ -49,8 +49,16 @@ import kotlinx.coroutines.launch
 /**
  * A result that has just been calculated with "=". [expression] is the plain engine text that was calculated;
  * [shown] is the line as the person typed it (with fraction boxes and so on), used to draw and to re-open it.
+ * [entryId] is the tape entry that holds the result and [angle] the unit it was calculated in, so the result can be
+ * re-run when the angle unit changes while it is on screen.
  */
-data class CommittedResult(val expression: String, val result: EvalResult, val shown: String = expression)
+data class CommittedResult(
+    val expression: String,
+    val result: EvalResult,
+    val shown: String = expression,
+    val entryId: Long = 0L,
+    val angle: AngleMode = AngleMode.DEG
+)
 
 /** What the next letter key should do after STO or RCL. */
 enum class Pending { STORE, RECALL }
@@ -141,6 +149,29 @@ class CalculatorViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { repo.ensureDefaults() }
+        // RAD / DEG / GRAD is one setting that every calculation reads. A result already on screen was calculated in the
+        // unit that was active at "=", so when the unit changes (the chip, MODE, or Settings) it is re-run in the new
+        // unit instead of staying frozen, e.g. sin(60) showing √3/2 after switching to RAD.
+        viewModelScope.launch {
+            settings.map { AngleMode.fromName(it.angleMode) }.distinctUntilChanged().collect { rerunCommitted(it) }
+        }
+    }
+
+    private suspend fun rerunCommitted(angle: AngleMode) {
+        val shown = _ui.value.committed ?: return
+        if (shown.angle == angle || shown.entryId == 0L) return
+        when (val r = repo.reevaluateEntry(shown.entryId, angle)) {
+            is SubmitResult.Added -> _ui.update { s ->
+                if (s.committed?.entryId == shown.entryId) s.copy(committed = shown.copy(result = r.result, angle = angle)) else s
+            }
+            // not calculable in the new unit: go back to editing the line and say why
+            is SubmitResult.Failed -> _ui.update { s ->
+                if (s.committed?.entryId == shown.entryId) {
+                    s.copy(expression = shown.shown, cursor = -1, committed = null, fractionOverride = null, error = r.error.message)
+                } else s
+            }
+            null -> Unit
+        }
     }
 
     // ------------------------------------------------------------------ display
@@ -467,8 +498,15 @@ class CalculatorViewModel @Inject constructor(
         val angle = AngleMode.fromName(settings.value.angleMode)
         viewModelScope.launch {
             when (val r = repo.submit(wid, text, angle)) {
-                is SubmitResult.Added -> _ui.update {
-                    CalcUiState(expression = text, committed = CommittedResult(text, r.result, shown = s.expression))
+                is SubmitResult.Added -> {
+                    _ui.update {
+                        CalcUiState(
+                            expression = text,
+                            committed = CommittedResult(text, r.result, shown = s.expression, entryId = r.entry.id, angle = angle)
+                        )
+                    }
+                    // the unit may have been switched while the answer was being calculated
+                    rerunCommitted(AngleMode.fromName(settings.value.angleMode))
                 }
                 is SubmitResult.Failed -> _ui.update { it.copy(error = r.error.message) }
             }
