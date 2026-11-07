@@ -148,6 +148,34 @@ class TapeRepository(
     }
 
     /**
+     * Re-runs the entry [entryId] under [angleMode] and stores the new result and unit on it, so the tape agrees with the
+     * display when the angle unit is changed while that result is still on screen (an entry remembers the unit it was
+     * calculated in). Entries that use `ans` or a variable this entry sets are recalculated like after an edit.
+     *
+     * Returns the fresh result, or null if the entry is gone or is a tool record. A result that cannot be calculated in the
+     * new unit (tan(90) in degrees, say) leaves the entry untouched and comes back as [SubmitResult.Failed]. A result
+     * that does not depend on the angle unit is not written again.
+     */
+    suspend fun reevaluateEntry(entryId: Long, angleMode: AngleMode): SubmitResult? {
+        val target = history.get(entryId)?.toDomain() ?: return null
+        if (target.isTool || target.isError) return null
+        val entries = history.getAll(target.workspaceId).map { it.toDomain() }
+        val index = entries.indexOfFirst { it.id == entryId }
+        if (index < 0) return null
+        val vars = loadVariables()
+        val ctx = EvalContext(angleMode, vars, TapeRecalculator.ansBefore(entries, index))
+        val result = when (val outcome = Calculator.evaluate(target.expression, ctx)) {
+            is EvalOutcome.Failure -> return SubmitResult.Failed(outcome.error)
+            is EvalOutcome.Success -> outcome.result
+        }
+        if (result.value.serialize() == target.resultValue) return SubmitResult.Added(target, result)
+        val withNewUnit = entries.map { if (it.id == entryId) it.copy(angleMode = angleMode) else it }
+        val outcome = TapeRecalculator.edit(withNewUnit, entryId, target.expression, vars, autoRecalc = true, now = clock())
+        persist(entries, outcome)
+        return SubmitResult.Added(outcome.entries[index], result)
+    }
+
+    /**
      * Records a result from the Tools tab on the tape. [input] is the one-line description of what was entered,
      * [summary] the result on one line and [full] the result with one line per value. The entry is a record only:
      * `ans` and the tape recalculation skip it.

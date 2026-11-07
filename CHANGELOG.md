@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed (update 8: angle unit and earlier lines)
+* **RAD / DEG / GRAD now applies to the result on screen.** A result calculated with "=" stayed frozen in the unit that was
+  active at that moment, so switching to RAD left `sin(60)` showing `√3/2` (the DEG answer) while the live preview used
+  radians. Changing the unit (the chip, MODE or Settings) now re-runs the result on screen in the new unit, and its tape
+  entry with it (an entry records the unit it was calculated in). If the result cannot be calculated in the new unit
+  (for example `tan(90)` in degrees) the line goes back to editing with the error message.
+* **Earlier lines on the scientific screen no longer overlap or get cut in half.** The rows were drawn at an assumed
+  height; they are now measured, each has its own line height and a gap, and only whole rows are shown (the oldest are
+  dropped first).
+
 ### Changed (update 6: speed and size)
 * **Baseline profile** (`app/src/main/baseline-prof.txt`) + ProfileInstaller: all of the app's own code is compiled ahead
   of time when the app is installed, so start-up and switching screens no longer depend on the phone "learning" the app.

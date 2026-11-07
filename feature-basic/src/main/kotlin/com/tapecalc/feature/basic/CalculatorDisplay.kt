@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
@@ -42,6 +43,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tapecalc.core.math.editor.Mk
@@ -129,12 +132,10 @@ fun CalculatorDisplay(
                 // at the bottom and always has room for at least two lines of the large text.
                 val workMin = (44f * scale * 2.4f).dp
                 Column(Modifier.fillMaxSize()) {
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                        val lineHeightDp = 21f * scale
-                        val fit = (maxHeight.value / lineHeightDp).toInt().coerceAtLeast(0)
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-                            HistoryLines(miniTape.takeLast(minOf(maxTapeLines, fit)), true, actions)
-                        }
+                    // The rows are measured, not estimated: only whole rows that fit are drawn (the oldest are dropped), so
+                    // a row can never be cut in half by the working line below it.
+                    Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                        HistoryLines(miniTape.takeLast(maxTapeLines), true, actions)
                     }
                     Box(
                         modifier = Modifier
@@ -162,26 +163,71 @@ fun CalculatorDisplay(
     }
 }
 
-/** The earlier calculations, oldest first, as small muted lines. */
+// An earlier line is 14 sp text in a 20 sp line box. The line height is stated on purpose: left unset, the text inherits
+// the theme's body line height (24 sp in Material 3), which does not follow the 14 sp size, so the rows were taller than
+// the 21 dp the old layout assumed for each, more rows were drawn than fitted, and the last one was cut off.
+private const val HISTORY_FONT_SP = 14f
+private const val HISTORY_LINE_SP = 20f
+private val HISTORY_ROW_PADDING = 2.dp
+private val HISTORY_ROW_GAP = 4.dp
+
+/** The earlier calculations, oldest first, as small muted lines, each with its own height and a gap before the next. */
 @Composable
 private fun HistoryLines(lines: List<MiniTapeLine>, scientific: Boolean, actions: DisplayActions) {
+    val content: @Composable () -> Unit = {
+        lines.forEach { line -> HistoryLine(line, scientific, actions) }
+    }
+    if (scientific) {
+        FittedRows(gap = HISTORY_ROW_GAP, modifier = Modifier.fillMaxWidth(), content = content)
+    } else {
+        // the basic screen scrolls, so every line is kept
+        Column(verticalArrangement = Arrangement.spacedBy(HISTORY_ROW_GAP), horizontalAlignment = Alignment.End) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun HistoryLine(line: MiniTapeLine, scientific: Boolean, actions: DisplayActions) {
     val look = LocalCalcLook.current
     val scale = look.fontScale
-    val muted = look.colors.muted
-    lines.forEach { line ->
-        Text(
-            text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
-            color = muted,
-            fontSize = 14.sp * scale,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .clickable(
-                    onClickLabel = if (scientific) "Edit this line" else "Open tape",
-                    onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
-                )
-                .padding(vertical = 2.dp)
-        )
+    Text(
+        text = "${Mk.stripMarkers(line.expression)} = ${line.result}",
+        color = look.colors.muted,
+        fontSize = HISTORY_FONT_SP.sp * scale,
+        lineHeight = HISTORY_LINE_SP.sp * scale,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .clickable(
+                onClickLabel = if (scientific) "Edit this line" else "Open tape",
+                onClick = if (scientific) { { actions.onAction(KeyAction.LoadExpression(line.expression)) } } else actions.onOpenTape
+            )
+            .padding(vertical = HISTORY_ROW_PADDING)
+    )
+}
+
+/**
+ * Stacks its rows from the top, right-aligned, with [gap] between them. Each row is measured at its real height and the
+ * OLDEST rows that do not fit the height on offer are left out, so a row is never cut off or drawn over the next one.
+ */
+@Composable
+private fun FittedRows(gap: Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content = content, modifier = modifier) { measurables, constraints ->
+        val rowConstraints = constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
+        val rows = measurables.map { it.measure(rowConstraints) }
+        val gapPx = gap.roundToPx()
+        val limit = if (constraints.hasBoundedHeight) constraints.maxHeight else Int.MAX_VALUE
+        val heights = rows.map { it.height }
+        val first = HistoryFit.firstVisible(heights, gapPx, limit)
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else rows.maxOfOrNull { it.width } ?: 0
+        layout(width, HistoryFit.usedHeight(heights, gapPx, first)) {
+            var y = 0
+            for (i in first until rows.size) {
+                rows[i].placeRelative(width - rows[i].width, y)
+                y += rows[i].height + gapPx
+            }
+        }
     }
 }
 
