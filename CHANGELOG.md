@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Added (update 9)
+* **Haptics and their settings.** Settings > Feedback now has a master **Haptics** switch. When it is on, two options
+  appear: **Haptic Strong** (a heavier vibration on every key) and **Haptic Sound** (a click with each key press, the
+  system touch sound). Digits, operators and ordinary function keys give a light tap (`KEYBOARD_TAP`); `=`, CALC, SHIFT,
+  ALPHA and HYP give a firmer one (`VIRTUAL_KEY`). Strong moves each one a step heavier. The saved setting is still the
+  single number `hapticLevel`, so settings from earlier versions keep working (the old Light / Medium both become
+  "on"; Strong stays "strong"). Haptic Sound is off whenever Haptics is off.
+* **Spreadsheet** (Tools > Spreadsheet): a `LazyVerticalGrid` of 5 columns (A-E) by 45 rows. A cell holds a number, a label,
+  or a formula: `=A1+B1*2`, `=sum(A1:A9)`, `=mean(B2:B20)` (also `min`, `max`, `count`, `avg`). Formulas use the calculator's
+  own engine, so fractions stay exact and sin / cos / tan follow RAD / DEG / GRAD. Cells that depend on each other are
+  worked out in the right order; a circular reference shows `#CYCLE`. Switch on "Select range", tap a second cell and the
+  count, sum, mean, smallest and largest of the block appear; the **sum** and **mean** buttons write the formula under
+  (or beside) the block. The sheet is kept on the device. Engine: `core-math/.../sheet/Spreadsheet.kt` (unit tested).
+* **Symbolic (exact) answers** for fractions, square roots and pi, kept exactly and only turned into decimals at the end
+  (`core-math/.../exact`). S<=>D now shows `sqrt(3)/2`, `(sqrt(6)-sqrt(2))/4`, `1+sqrt(2)`, `2pi/3`, `pi^2/6`, `1/pi`... for
+  expressions such as `sin(60)`, `cos(15)`, `sqrt(2)*sqrt(3)`, `(1+sqrt(2))^2` or `acos(1/2)`. The exact form follows the
+  angle unit: `sin(60)` has the exact form `sqrt(3)/2` in DEG but not in RAD, while `sin(pi/3)` has it in RAD but not in DEG.
+  An exact form is shown only after it agrees with the decimal value to 28 digits, so it can never contradict the number.
+* **Statistics table** (Tools > Statistics table; the STAT key on the scientific keypad now opens it): the data-entry screen
+  of a calculator's STAT mode. Choose 1-variable (X) or 2-variable (X, Y), switch the FREQ column on or off, type the data
+  row by row (a new empty row appears under the last one; up to 80 rows), pick the regression curve, and optionally ask
+  for a predicted y or an estimated x. Mistakes name the row ("Row 3: enter y"). A curve that cannot be fitted to the data
+  (a log fit with x <= 0) no longer hides the statistics.
+* **Distributions menu** (Tools > Distributions; the DISTR key): now asks for what a calculator asks for. Distribution
+  (Normal / Binomial / Poisson), Function (PD / CD / Inverse), Data (**Variable** or **List**) and, for the inverse normal,
+  the tail (Left / Right / Central). Only the boxes that apply are shown. Normal CD takes a lower and an upper bound
+  (leave one empty for minus or plus infinity). In List mode every box takes a list and the answer has one line per
+  value (a single value is repeated against a list; two lists must be the same length).
+
+### Changed (update 9)
+* A tool can now change its chips and boxes after an earlier chip is picked (`ToolSpec.visibleFields` /
+  `visibleOptions`); the tape records the visible ones. Old saved Distributions boxes (`p1`, `p2`, `p3`) are simply
+  ignored.
+
 ### Fixed (update 8: angle unit and earlier lines)
 * **RAD / DEG / GRAD now applies to the result on screen.** A result calculated with "=" stayed frozen in the unit that was
   active at that moment, so switching to RAD left `sin(60)` showing `√3/2` (the DEG answer) while the live preview used

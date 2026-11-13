@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Calculate
 import androidx.compose.material.icons.outlined.Casino
+import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material.icons.outlined.FormatListNumbered
 import androidx.compose.material.icons.outlined.Functions
 import androidx.compose.material.icons.outlined.GridOn
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.TrendingFlat
 import androidx.compose.material.icons.outlined.TrendingUp
@@ -81,6 +83,8 @@ import com.tapecalc.core.ui.LocalToolStateStore
 private const val GRAPH_ID = "graph"
 private const val CONSTANTS_ID = "constants"
 private const val QR_ID = "qr"
+private const val STAT_TABLE_ID = "stattable"
+private const val SHEET_ID = "sheet"
 
 /** Tools whose single answer is a number the calculator can read back. */
 private val numericResultTools = setOf("solve", "calculus", "dist")
@@ -95,6 +99,8 @@ private fun iconFor(id: String): ImageVector = when (id) {
     "calculus" -> Icons.Outlined.Analytics
     "algebra" -> Icons.Outlined.Functions
     "stats1" -> Icons.Outlined.BarChart
+    STAT_TABLE_ID -> Icons.Outlined.Equalizer
+    SHEET_ID -> Icons.Outlined.TableChart
     "stats2" -> Icons.Outlined.TrendingUp
     "dist" -> Icons.Outlined.Casino
     "basen" -> Icons.Outlined.Memory
@@ -109,12 +115,19 @@ private fun iconFor(id: String): ImageVector = when (id) {
     else -> Icons.Outlined.Functions
 }
 
-private val hubEntries: List<HubEntry> =
-    Tools.all.map { HubEntry(it.id, it.title, it.summary) } + listOf(
-        HubEntry(GRAPH_ID, "Graph", "Plot up to three functions, pan, zoom, trace, find roots and peaks"),
-        HubEntry(CONSTANTS_ID, "Constants", "${Constants.all.size} physical constants: tap one to use it"),
-        HubEntry(QR_ID, "QR code", "Turn any text, result or equation into a QR code (works offline)")
-    )
+private val hubEntries: List<HubEntry> = buildList {
+    for (tool in Tools.all) {
+        // the statistics data-entry table sits just before the other statistics tools
+        if (tool.id == "stats1") {
+            add(HubEntry(STAT_TABLE_ID, "Statistics table", "Enter 1-variable or 2-variable data (X, Y, FREQ) in a table, like a calculator's STAT mode"))
+        }
+        add(HubEntry(tool.id, tool.title, tool.summary))
+    }
+    add(HubEntry(GRAPH_ID, "Graph", "Plot up to three functions, pan, zoom, trace, find roots and peaks"))
+    add(HubEntry(SHEET_ID, "Spreadsheet", "A grid of 5 columns (A–E) by 45 rows with formulas, sum and mean"))
+    add(HubEntry(CONSTANTS_ID, "Constants", "${Constants.all.size} physical constants: tap one to use it"))
+    add(HubEntry(QR_ID, "QR code", "Turn any text, result or equation into a QR code (works offline)"))
+}
 
 /**
  * The "Tools" tab: a list of extra maths tools (equation solvers, statistics, matrices, graphing...).
@@ -163,6 +176,8 @@ fun ToolsScreen(
             when (current) {
                 CONSTANTS_ID -> ConstantsPane(onUseInCalculator = onUseInCalculator, modifier = Modifier.weight(1f))
                 QR_ID -> QrPane(text = qrText, onTextChange = onQrTextChange, modifier = Modifier.weight(1f))
+                STAT_TABLE_ID -> StatTablePane(ctx = ctx, onSaveToTape = onSaveToTape, modifier = Modifier.weight(1f))
+                SHEET_ID -> SheetPane(angleMode = angleMode, onUseInCalculator = onUseInCalculator, modifier = Modifier.weight(1f))
                 else -> {
                     val spec = Tools.byId(current)
                     if (spec != null) {
@@ -279,7 +294,9 @@ private fun FormTool(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        spec.options.forEach { option ->
+        // The chips and boxes may depend on earlier chips (Distribution / Function / Data), so they are asked for afresh.
+        val picked = spec.choiceLookup(choices.toMap())
+        spec.optionsFor(picked).forEach { option ->
             Text(option.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -300,7 +317,7 @@ private fun FormTool(
             }
         }
 
-        spec.fields.forEach { field ->
+        spec.fieldsFor(picked).forEach { field ->
             ExpressionField(
                 value = texts[field.id] ?: "",
                 onValueChange = {
@@ -358,7 +375,7 @@ private fun FormTool(
 }
 
 @Composable
-private fun ResultRow(line: ResultLine) {
+internal fun ResultRow(line: ResultLine) {
     Column {
         if (line.label.isNotEmpty()) {
             Text(line.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

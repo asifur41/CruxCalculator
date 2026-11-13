@@ -151,10 +151,15 @@ data class EvalResult(
     /** The value as a multiple of π, e.g. "2π/3", when it is one. */
     val piForm: String? = null,
     /** The value as a simplified root, e.g. "√2/2" or "3√5", when it is one. */
-    val radicalForm: String? = null
+    val radicalForm: String? = null,
+    /**
+     * The value kept exactly by the symbolic engine ([com.tapecalc.core.math.exact.ExactEval]) in the active angle unit,
+     * when it is not a plain fraction: "√3/2", "(√6-√2)/4", "1+√2", "2π/3", "π²/6" ...
+     */
+    val symbolicForm: String? = null
 ) {
-    /** The exact form shown by the S⇔D toggle: a fraction, else a root, else a multiple of π. */
-    val exactForm: String? get() = fraction ?: radicalForm ?: piForm
+    /** The exact form shown by the S⇔D toggle: a fraction, else the symbolic form, else a root, else a multiple of π. */
+    val exactForm: String? get() = fraction ?: symbolicForm ?: radicalForm ?: piForm
 
     val displayWithUnit: String get() = if (unit != null) "$display $unit" else display
     val hasExactView: Boolean get() = exactForm != null

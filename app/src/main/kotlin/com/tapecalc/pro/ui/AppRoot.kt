@@ -339,7 +339,7 @@ fun AppRoot(viewModel: CalculatorViewModel) {
     val latestSettings by rememberUpdatedState(settings)
     val onKey: (KeyAction) -> Unit = remember(viewModel, feedback, clipboard, selectTab, openTool) {
         { action ->
-            feedback.key(latestSettings.hapticLevel, latestSettings.soundEnabled)
+            feedback.key(isFirmKey(action), latestSettings.hapticLevel, latestSettings.soundEnabled)
             when (action) {
                 KeyAction.Paste -> {
                     viewModel.onPaste(clipboard.getText()?.text)

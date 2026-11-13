@@ -75,7 +75,7 @@ private val ONBOARDING_PAGES = listOf(
         Icons.Outlined.Palette,
         "Make it yours",
         "Open Settings (the gear icon) for 12 themes, a custom accent colour, key styles, " +
-            "left-handed layout, haptic strength and text size.\n\n" +
+            "left-handed layout, haptics and key sounds, and text size.\n\n" +
             "You can replay this tutorial any time from Settings."
     )
 )

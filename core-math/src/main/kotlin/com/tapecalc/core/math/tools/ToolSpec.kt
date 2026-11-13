@@ -31,6 +31,11 @@ class ToolInput(private val texts: Map<String, String>, private val choices: Map
 /**
  * A calculator tool described as data: which boxes to show and how to turn them into an answer. The screen
  * draws any [ToolSpec] the same way, so all the maths lives here, in plain Kotlin that has unit tests.
+ *
+ * [fields] and [options] list everything the tool can ever show (the screen keeps one saved value per id). Most tools show
+ * all of it. A tool whose prompts depend on an earlier choice, like a calculator menu that asks for different things after
+ * you pick Normal, Binomial or Poisson, also gives [visibleFields] and/or [visibleOptions]: functions from "which chip
+ * is picked" to what is shown now.
  */
 class ToolSpec(
     val id: String,
@@ -38,5 +43,16 @@ class ToolSpec(
     val summary: String,
     val fields: List<ToolField>,
     val options: List<ToolOption> = emptyList(),
+    val visibleFields: ((choice: (String) -> Int) -> List<ToolField>)? = null,
+    val visibleOptions: ((choice: (String) -> Int) -> List<ToolOption>)? = null,
     val run: (ToolInput) -> ToolResult
-)
+) {
+    /** The boxes to show for the current chips; [choice] returns the picked index of an option id. */
+    fun fieldsFor(choice: (String) -> Int): List<ToolField> = visibleFields?.invoke(choice) ?: fields
+
+    /** The chip rows to show for the current chips. */
+    fun optionsFor(choice: (String) -> Int): List<ToolOption> = visibleOptions?.invoke(choice) ?: options
+
+    /** The picked index of every option, from [picked] with each option's default for any that is missing. */
+    fun choiceLookup(picked: Map<String, Int>): (String) -> Int = { id -> picked[id] ?: options.firstOrNull { it.id == id }?.default ?: 0 }
+}

@@ -1,5 +1,6 @@
 package com.tapecalc.core.math.tools
 
+import com.tapecalc.core.math.Arith
 import com.tapecalc.core.math.BaseNCalc
 import com.tapecalc.core.math.BaseNOutcome
 import com.tapecalc.core.math.CalcException
@@ -247,38 +248,176 @@ object Tools {
         }
     }
 
-    private val distributions = ToolSpec(
-        id = "dist", title = "Distributions",
-        summary = "Normal, binomial and Poisson: probabilities and inverses",
-        fields = listOf(
-            ToolField("p1", "Value x / k / area (see below)", "1.5", default = "1.5"),
-            ToolField("p2", "Mean μ  /  n  /  λ", "0", default = "0"),
-            ToolField("p3", "Standard deviation σ  /  probability p", "1", default = "1"),
-            ToolField("p4", "Upper bound (normal range only)")
-        ),
-        options = listOf(
-            ToolOption(
-                "kind", "Function",
-                listOf("Normal pdf", "Normal P(≤x)", "Normal range", "Inverse normal", "Binomial pdf", "Binomial P(≤k)", "Poisson pdf", "Poisson P(≤k)")
-            )
-        )
-    ) { input ->
-        guarded {
-            val c = input.ctx
-            val p1 = input.text("p1"); val p2 = input.text("p2"); val p3 = input.text("p3"); val p4 = input.text("p4")
-            fun orDefault(t: String, d: String) = t.ifEmpty { d }
-            when (input.choice("kind")) {
-                0 -> ok(line("f(x)", Distributions.normalPdf(number(p1, c, "x"), number(orDefault(p2, "0"), c, "μ"), number(orDefault(p3, "1"), c, "σ"))))
-                1 -> ok(line("P(X ≤ x)", Distributions.normalCdf(null, number(p1, c, "x"), number(orDefault(p2, "0"), c, "μ"), number(orDefault(p3, "1"), c, "σ"))))
-                2 -> ok(line("P(lower ≤ X ≤ upper)", Distributions.normalCdf(number(p1, c, "lower bound"), number(p4, c, "upper bound"), number(orDefault(p2, "0"), c, "μ"), number(orDefault(p3, "1"), c, "σ"))))
-                3 -> ok(line("x", Distributions.invNormal(number(p1, c, "area"), number(orDefault(p2, "0"), c, "μ"), number(orDefault(p3, "1"), c, "σ"))))
-                4 -> ok(line("P(X = k)", Distributions.binomialPdf(intOf(p2, c, "n"), number(p3, c, "p"), intOf(p1, c, "k"))))
-                5 -> ok(line("P(X ≤ k)", Distributions.binomialCdf(intOf(p2, c, "n"), number(p3, c, "p"), intOf(p1, c, "k"))))
-                6 -> ok(line("P(X = k)", Distributions.poissonPdf(number(p2, c, "λ"), intOf(p1, c, "k"))))
-                else -> ok(line("P(X ≤ k)", Distributions.poissonCdf(number(p2, c, "λ"), intOf(p1, c, "k"))))
+    // ---- Distributions: the menu of a physical calculator (Normal / Binomial / Poisson, PD / CD / Inverse, Variable / List)
+
+    private const val DIST_NORMAL = 0
+    private const val DIST_BINOMIAL = 1
+    private const val FN_PD = 0
+    private const val FN_CD = 1
+    private const val FN_INV = 2
+    private const val TAIL_LEFT = 0
+    private const val TAIL_RIGHT = 1
+
+    private val sigmaField = ToolField("sigma", "Standard deviation σ", "1", default = "1")
+    private val muField = ToolField("mu", "Mean μ", "0", default = "0")
+    private val nField = ToolField("n", "Number of trials n", "10", default = "10")
+    private val pField = ToolField("p", "Probability of success p", "0.5", default = "0.5")
+    private val lambdaField = ToolField("lambda", "Mean λ", "3", default = "3")
+
+    /** A box that holds one value in Variable mode and a list of values in List mode. */
+    private fun valueOrList(list: Boolean, id: String, variableLabel: String, listLabel: String, variableHint: String, listHint: String, default: String) =
+        ToolField(id, if (list) listLabel else variableLabel, if (list) listHint else variableHint, default = default)
+
+    /** The boxes a physical menu asks for after Distribution, Function and Data have been picked. */
+    private fun distributionFields(choice: (String) -> Int): List<ToolField> {
+        val list = choice("data") == 1
+        val x = { variable: String, listLabel: String -> valueOrList(list, "x", variable, listLabel, "1", "0, 1, 2, 3", "1") }
+        val area = valueOrList(list, "area", "Area (probability)", "Area list", "0.95", "0.9, 0.95, 0.99", "0.95")
+        val lower = valueOrList(list, "lo", "Lower bound (empty = −∞)", "Lower list (empty = −∞)", "-1", "-2, -1, 0", "-1")
+        val upper = valueOrList(list, "hi", "Upper bound (empty = +∞)", "Upper list (empty = +∞)", "1", "1, 2, 3", "1")
+        val fn = choice("fn")
+        return when (choice("dist")) {
+            DIST_NORMAL -> when (fn) {
+                FN_PD -> listOf(x("x", "x list"), sigmaField, muField)
+                FN_CD -> listOf(lower, upper, sigmaField, muField)
+                else -> listOf(area, sigmaField, muField)
             }
+            DIST_BINOMIAL -> if (fn == FN_INV) listOf(area, nField, pField) else listOf(x("Successes k", "k list"), nField, pField)
+            else -> if (fn == FN_INV) listOf(area, lambdaField) else listOf(x("Count k", "k list"), lambdaField)
         }
     }
+
+    private fun distributionOptions(choice: (String) -> Int): List<ToolOption> =
+        if (choice("dist") == DIST_NORMAL && choice("fn") == FN_INV) distributionOptionsAll else distributionOptionsAll.filter { it.id != "tail" }
+
+    private val distributionOptionsAll = listOf(
+        ToolOption("dist", "Distribution", listOf("Normal", "Binomial", "Poisson")),
+        ToolOption("fn", "Function", listOf("PD (pdf)", "CD (cumulative)", "Inverse")),
+        ToolOption("data", "Data", listOf("Variable", "List")),
+        ToolOption("tail", "Tail (inverse normal)", listOf("Left", "Right", "Central"))
+    )
+
+    private fun whole(v: CalcValue, what: String): Int {
+        val exact = v.exact
+        if (exact == null || !exact.isInteger || exact.num.bitLength() > 31 || exact.signum < 0) {
+            throw CalcException(com.tapecalc.core.math.ErrorKind.INVALID_ARGUMENT, "$what must be a whole number, 0 or more")
+        }
+        return exact.num.toInt()
+    }
+
+    /** One value (Variable) or a list (List) from a box; an empty box is an error unless [allowEmpty]. */
+    private fun values(input: ToolInput, id: String, what: String, list: Boolean, allowEmpty: Boolean = false): List<CalcValue>? {
+        val text = input.text(id)
+        if (text.isEmpty()) {
+            if (allowEmpty) return null
+            throw CalcException(com.tapecalc.core.math.ErrorKind.EMPTY, if (list) "Enter the $what list" else "Enter $what")
+        }
+        return if (list) Stats.parseList(text, input.ctx).also {
+            if (it.isEmpty()) throw CalcException(com.tapecalc.core.math.ErrorKind.EMPTY, "Enter the $what list")
+            if (it.size > MAX_LIST) throw CalcException(com.tapecalc.core.math.ErrorKind.TOO_COMPLEX, "A list can hold up to $MAX_LIST values")
+        } else listOf(number(text, input.ctx, what))
+    }
+
+    private const val MAX_LIST = 80
+
+    private fun distributionRun(input: ToolInput): ToolResult = guarded {
+        val c = input.ctx
+        val list = input.choice("data") == 1
+        val dist = input.choice("dist")
+        val fn = input.choice("fn")
+        val rows = ArrayList<ResultLine>()
+        fun fmt(v: CalcValue) = v.toString()
+        fun single(id: String, default: String, what: String): CalcValue = number(input.text(id).ifEmpty { default }, c, what)
+
+        when (dist) {
+            DIST_NORMAL -> {
+                val sigma = single("sigma", "1", "σ")
+                val mu = single("mu", "0", "μ")
+                when (fn) {
+                    FN_PD -> for (x in values(input, "x", "x", list)!!) {
+                        rows += ResultLine(if (list) "f(${fmt(x)})" else "f(x)", fmt(Distributions.normalPdf(x, mu, sigma)))
+                    }
+                    FN_CD -> {
+                        val lo = values(input, "lo", "the lower bound", list, allowEmpty = true)
+                        val hi = values(input, "hi", "the upper bound", list, allowEmpty = true)
+                        if (lo == null && hi == null) return@guarded err("Enter a lower bound, an upper bound, or both")
+                        val count = maxOf(lo?.size ?: 1, hi?.size ?: 1)
+                        if ((lo != null && lo.size != 1 && lo.size != count) || (hi != null && hi.size != 1 && hi.size != count)) {
+                            return@guarded err("The lower and upper lists need the same number of values (${lo?.size} and ${hi?.size})")
+                        }
+                        for (i in 0 until count) {
+                            val l = lo?.let { it[if (it.size == 1) 0 else i] }
+                            val h = hi?.let { it[if (it.size == 1) 0 else i] }
+                            val label = when {
+                                l != null && h != null -> "P(${fmt(l)} ≤ X ≤ ${fmt(h)})"
+                                h != null -> "P(X ≤ ${fmt(h)})"
+                                else -> "P(X ≥ ${fmt(l!!)})"
+                            }
+                            rows += ResultLine(label, fmt(Distributions.normalCdf(l, h, mu, sigma)))
+                        }
+                    }
+                    else -> for (a in values(input, "area", "the area", list)!!) {
+                        when (input.choice("tail")) {
+                            TAIL_LEFT -> rows += ResultLine(if (list) "x (area ${fmt(a)})" else "x", fmt(Distributions.invNormal(a, mu, sigma)))
+                            TAIL_RIGHT -> rows += ResultLine(
+                                if (list) "x (right area ${fmt(a)})" else "x",
+                                fmt(Distributions.invNormal(Arith.sub(CalcValue.ONE, a), mu, sigma))
+                            )
+                            else -> {
+                                // the middle area a: the bounds leave (1 - a) / 2 in each tail
+                                val half = Arith.div(Arith.sub(CalcValue.ONE, a), CalcValue.ofLong(2))
+                                val suffix = if (list) " (area ${fmt(a)})" else ""
+                                rows += ResultLine("x lower$suffix", fmt(Distributions.invNormal(half, mu, sigma)))
+                                rows += ResultLine("x upper$suffix", fmt(Distributions.invNormal(Arith.sub(CalcValue.ONE, half), mu, sigma)))
+                            }
+                        }
+                    }
+                }
+            }
+            DIST_BINOMIAL -> {
+                val n = whole(single("n", "10", "n"), "n")
+                val p = single("p", "0.5", "p")
+                if (fn == FN_INV) {
+                    for (a in values(input, "area", "the area", list)!!) {
+                        rows += ResultLine(if (list) "k (area ${fmt(a)})" else "k", Distributions.invBinomial(n, p, a).toString())
+                    }
+                } else for (kv in values(input, "x", "k", list)!!) {
+                    val k = whole(kv, "k")
+                    rows += if (fn == FN_PD) ResultLine("P(X = $k)", fmt(Distributions.binomialPdf(n, p, k)))
+                    else ResultLine("P(X ≤ $k)", fmt(Distributions.binomialCdf(n, p, k)))
+                }
+            }
+            else -> {
+                val lambda = single("lambda", "3", "λ")
+                if (fn == FN_INV) {
+                    for (a in values(input, "area", "the area", list)!!) {
+                        rows += ResultLine(if (list) "k (area ${fmt(a)})" else "k", Distributions.invPoisson(lambda, a).toString())
+                    }
+                } else for (kv in values(input, "x", "k", list)!!) {
+                    val k = whole(kv, "k")
+                    rows += if (fn == FN_PD) ResultLine("P(X = $k)", fmt(Distributions.poissonPdf(lambda, k)))
+                    else ResultLine("P(X ≤ $k)", fmt(Distributions.poissonCdf(lambda, k)))
+                }
+            }
+        }
+        ToolResult.Ok(rows)
+    }
+
+    private val distributions = ToolSpec(
+        id = "dist", title = "Distributions",
+        summary = "Normal, binomial and Poisson: PD, CD and inverse, for one value or a whole list",
+        fields = listOf(
+            ToolField("x", "x", "1", default = "1"),
+            ToolField("lo", "Lower bound", "-1", default = "-1"),
+            ToolField("hi", "Upper bound", "1", default = "1"),
+            ToolField("area", "Area (probability)", "0.95", default = "0.95"),
+            sigmaField, muField, nField, pField, lambdaField
+        ),
+        options = distributionOptionsAll,
+        visibleFields = ::distributionFields,
+        visibleOptions = ::distributionOptions,
+        run = ::distributionRun
+    )
 
     private val baseN = ToolSpec(
         id = "basen", title = "BASE-N (logic)",

@@ -194,9 +194,9 @@ object SciKeys {
         op("÷", "÷", "Divide", shift = fn("nCr", "nCr(", "Combinations"), alpha = fn("LCM", "lcm(", "Least common multiple"))
     )
     val row7 = listOf(
-        digit("1", shift = tool("STAT", "stats1", "Statistics")),
+        digit("1", shift = tool("STAT", "stattable", "Statistics: data table for one or two variables")),
         digit("2", shift = tool("CMPLX", "complex", "Complex numbers")),
-        digit("3", shift = tool("DISTR", "dist", "Distributions")),
+        digit("3", shift = tool("DISTR", "dist", "Distributions: normal, binomial, Poisson")),
         op("+", "+", "Add", shift = fn("Pol", "pol(", "Rectangular to polar"), alpha = fn("Ceil", "ceil(", "Round up")),
         op("−", "−", "Subtract", shift = fn("Rec", "rec(", "Polar to rectangular"), alpha = fn("Floor", "floor(", "Round down"))
     )
