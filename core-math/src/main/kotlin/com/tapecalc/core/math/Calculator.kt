@@ -1,5 +1,6 @@
 package com.tapecalc.core.math
 
+import com.tapecalc.core.math.exact.ExactEval
 import com.tapecalc.core.precision.DomainException
 import com.tapecalc.core.precision.NumberFormatter
 import com.tapecalc.core.precision.OverflowException
@@ -81,8 +82,8 @@ object Calculator {
         val (statement, warnings) = Parser.parse(Tokenizer.tokenize(text))
         val evaluator = Evaluator(ctx)
         return when (statement) {
-            is Statement.Expr -> buildResult(evaluator.eval(statement.node), null, warnings, null, evaluator)
-            is Statement.Assign -> buildResult(evaluator.eval(statement.node), null, warnings, statement.name, evaluator)
+            is Statement.Expr -> buildResult(evaluator.eval(statement.node), null, warnings, null, evaluator, statement.node, ctx)
+            is Statement.Assign -> buildResult(evaluator.eval(statement.node), null, warnings, statement.name, evaluator, statement.node, ctx)
         }
     }
 
@@ -126,13 +127,39 @@ object Calculator {
         return null
     }
 
+    /**
+     * The symbolic engine ([ExactEval]) re-reads the same expression in the same angle unit and keeps fractions, roots and
+     * π exact. It is only trusted when it matches the decimal value to 28 digits. A result it finds to be a plain fraction
+     * that the decimal engine only had approximately (sin(π/6) in radians is exactly 1/2, cos(π/2) is exactly 0) becomes
+     * an exact value; one with roots or π is kept as text in [EvalResult.symbolicForm]. Anything else is left as it was.
+     */
+    private class Reconciled(val value: CalcValue, val symbolicForm: String?)
+
+    private fun reconcile(value: CalcValue, node: Node?, ctx: EvalContext?): Reconciled {
+        if (node == null || ctx == null) return Reconciled(value, null)
+        val symbolic = ExactEval.evaluate(node, ctx) ?: return Reconciled(value, null)
+        val rational = symbolic.asRational()
+        if (rational != null) {
+            if (value.exact != null) return Reconciled(value, null) // already exact: the decimal engine is the authority
+            if (!ExactEval.agrees(symbolic, value)) return Reconciled(value, null)
+            val upgraded = try { CalcValue.ofRational(rational) } catch (e: CalcException) { return Reconciled(value, null) }
+            return Reconciled(upgraded, null)
+        }
+        if (!ExactEval.agrees(symbolic, value)) return Reconciled(value, null)
+        return Reconciled(value, symbolic.format())
+    }
+
     private fun buildResult(
-        value: CalcValue,
+        rawValue: CalcValue,
         unit: String?,
         warnings: List<String>,
         assigned: String?,
-        evaluator: Evaluator? = null
+        evaluator: Evaluator? = null,
+        node: Node? = null,
+        ctx: EvalContext? = null
     ): EvalResult {
+        val reconciled = if (unit == null) reconcile(rawValue, node, ctx) else Reconciled(rawValue, null)
+        val value = reconciled.value
         val exact = value.exact
         val display = NumberFormatter.format(value.decimal, Precision.DISPLAY_DIGITS)
         val full = if (exact != null && exact.isInteger && exact.num.abs().toString().length <= 60) exact.num.toString()
@@ -159,7 +186,8 @@ object Calculator {
             extras = evaluator?.extras?.toList().orEmpty(),
             dms = if (unit == null) Dms.format(value) else null,
             piForm = if (unit == null) ExactForms.piForm(value) else null,
-            radicalForm = if (unit == null) ExactForms.radicalForm(value) else null
+            radicalForm = if (unit == null) ExactForms.radicalForm(value) else null,
+            symbolicForm = reconciled.symbolicForm
         )
     }
 

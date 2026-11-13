@@ -1,5 +1,6 @@
 package com.tapecalc.pro.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,8 +47,6 @@ import com.tapecalc.core.ui.KeypadStyle
 import com.tapecalc.core.ui.SectionTitle
 import com.tapecalc.core.ui.ThemeSwatch
 import com.tapecalc.core.ui.Themes
-
-private val HAPTIC_LABELS = listOf("Off", "Light", "Medium", "Strong")
 
 @Composable
 fun SettingsScreen(
@@ -135,20 +134,28 @@ fun SettingsScreen(
         )
 
         SectionTitle("Feedback")
-        Text("Haptic strength: ${HAPTIC_LABELS[settings.hapticLevel.coerceIn(0, 3)]}", style = MaterialTheme.typography.labelLarge)
-        Slider(
-            value = settings.hapticLevel.toFloat(),
-            onValueChange = { v -> onChange { it.copy(hapticLevel = v.toInt().coerceIn(0, 3)) } },
-            valueRange = 0f..3f,
-            steps = 2,
-            modifier = Modifier.semantics { stateDescription = HAPTIC_LABELS[settings.hapticLevel.coerceIn(0, 3)] }
-        )
         SwitchRow(
-            title = "Key click sound",
-            subtitle = "Uses the system touch sound. Follows your phone's volume and touch-sound settings.",
-            checked = settings.soundEnabled,
-            onCheckedChange = { v -> onChange { it.copy(soundEnabled = v) } }
+            title = "Haptics",
+            subtitle = "A light tap for digits and operators, a firmer one for = and the SHIFT / ALPHA keys.",
+            checked = HapticPlan.isOn(settings.hapticLevel),
+            onCheckedChange = { v -> onChange { it.copy(hapticLevel = HapticPlan.withOn(it.hapticLevel, v)) } }
         )
+        AnimatedVisibility(visible = HapticPlan.isOn(settings.hapticLevel)) {
+            Column(Modifier.padding(start = 16.dp)) {
+                SwitchRow(
+                    title = "Haptic Strong",
+                    subtitle = "A heavier vibration on every key.",
+                    checked = HapticPlan.isStrong(settings.hapticLevel),
+                    onCheckedChange = { v -> onChange { it.copy(hapticLevel = HapticPlan.withStrong(it.hapticLevel, v)) } }
+                )
+                SwitchRow(
+                    title = "Haptic Sound",
+                    subtitle = "A click with each key press. Uses the system touch sound, so it follows your phone's volume and touch-sound settings.",
+                    checked = settings.soundEnabled,
+                    onCheckedChange = { v -> onChange { it.copy(soundEnabled = v) } }
+                )
+            }
+        }
 
         SectionTitle("Calculation")
         Text("Angle unit", style = MaterialTheme.typography.labelLarge)

@@ -21,12 +21,14 @@ object ToolHistory {
     /** What the person entered: the picked chips, then each filled box (labelled when the tool has several boxes). */
     fun inputText(spec: ToolSpec, texts: Map<String, String>, choices: Map<String, Int>): String {
         val parts = ArrayList<String>()
-        for (option in spec.options) {
+        val choice = spec.choiceLookup(choices)
+        for (option in spec.optionsFor(choice)) {
             val index = choices[option.id] ?: option.default
             option.choices.getOrNull(index)?.let { parts.add("[$it]") }
         }
-        val labelled = spec.fields.size > 1
-        for (field in spec.fields) {
+        val fields = spec.fieldsFor(choice)
+        val labelled = fields.size > 1
+        for (field in fields) {
             val value = oneLine(texts[field.id].orEmpty())
             if (value.isEmpty()) continue
             parts.add(if (labelled) "${field.label}: $value" else value)
