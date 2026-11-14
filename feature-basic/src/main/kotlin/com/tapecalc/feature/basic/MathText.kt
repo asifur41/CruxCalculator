@@ -41,6 +41,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import com.tapecalc.core.math.editor.LineBreaks
 import com.tapecalc.core.math.editor.MathNode
 import com.tapecalc.core.math.editor.MathTree
 import com.tapecalc.core.math.editor.Mk
@@ -83,41 +84,51 @@ fun MathText(
             horizontalArrangement = Arrangement.End,
             verticalArrangement = Arrangement.Center
         ) {
-            Nodes(nodes, cursor, fontSize, color, weight)
+            // wrap = true: only the top level of the line may break onto a further row. The boxes inside a fraction,
+            // integral and so on stay in one piece.
+            Nodes(nodes, cursor, fontSize, color, weight, wrap = true)
         }
     }
 }
 
 @Composable
-private fun Nodes(nodes: List<MathNode>, cursor: Int?, fs: TextUnit, color: Color, weight: FontWeight) {
+private fun Nodes(nodes: List<MathNode>, cursor: Int?, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false) {
     for (node in nodes) {
         when (node) {
-            is RunNode -> Run(node, cursor, fs, color, weight)
+            is RunNode -> Run(node, cursor, fs, color, weight, wrap)
             is TemplateNode -> Template(node, cursor, fs, color, weight)
         }
     }
 }
 
+/**
+ * One piece of text. With [wrap] the text is cut into small chunks ([LineBreaks]) that are separate children of the
+ * FlowRow, so a long run such as `78999999999999999999` or `ans+ans+ans+ans+ans` can continue on the next row. Before,
+ * the whole run was a single piece that could not break and was cut off at the edge of the screen.
+ */
 @Composable
-private fun Piece(text: String, fs: TextUnit, color: Color, weight: FontWeight) {
+private fun Piece(text: String, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false) {
     if (text.isEmpty()) return
-    Text(
-        text = text,
-        color = color,
-        style = TextStyle(fontSize = fs, fontWeight = weight, fontFeatureSettings = "tnum"),
-        softWrap = false
-    )
+    val style = TextStyle(fontSize = fs, fontWeight = weight, fontFeatureSettings = "tnum")
+    if (!wrap) {
+        Text(text = text, color = color, style = style, softWrap = false)
+        return
+    }
+    val chunks = remember(text) { LineBreaks.chunks(text) }
+    for (chunk in chunks) {
+        Text(text = chunk, color = color, style = style, softWrap = false)
+    }
 }
 
 @Composable
-private fun Run(run: RunNode, cursor: Int?, fs: TextUnit, color: Color, weight: FontWeight) {
+private fun Run(run: RunNode, cursor: Int?, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false) {
     if (cursor != null && cursor >= run.start && cursor <= run.end) {
         val cut = cursor - run.start
-        Piece(run.text.substring(0, cut), fs, color, weight)
+        Piece(run.text.substring(0, cut), fs, color, weight, wrap)
         Caret(fs)
-        Piece(run.text.substring(cut), fs, color, weight)
+        Piece(run.text.substring(cut), fs, color, weight, wrap)
     } else {
-        Piece(run.text, fs, color, weight)
+        Piece(run.text, fs, color, weight, wrap)
     }
 }
 

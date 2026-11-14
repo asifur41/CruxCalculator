@@ -59,7 +59,7 @@ android {
         targetSdk = 36
         // Number of git commits (see above): rises with every commit, identical across both workflows (Google Play requires it to rise).
         versionCode = commitCount
-        versionName = "1.4.4"
+        versionName = "1.4.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

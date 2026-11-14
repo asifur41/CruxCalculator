@@ -5,13 +5,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -127,9 +136,9 @@ fun KeyButton(
     onAction: (KeyAction) -> Unit,
     modifier: Modifier = Modifier,
     textSize: TextUnit = 22.sp,
-    /** Small label of the SHIFT function, shown top-left (scientific keypad). */
+    /** Small label of the SHIFT function, shown top-left. Only drawn when [reserveHintRow] is on (scientific keypad). */
     shiftHint: String? = null,
-    /** Small label of the ALPHA function, shown top-right (scientific keypad). */
+    /** Small label of the ALPHA function, shown top-right. Only drawn when [reserveHintRow] is on (scientific keypad). */
     alphaHint: String? = null,
     /** Draws the key in the accent colour (SHIFT / ALPHA / HYP while they are switched on). */
     highlighted: Boolean = false,
@@ -138,7 +147,13 @@ fun KeyButton(
      * Hides every small label (SHIFT, ALPHA and long-press hints). The scientific keypad turns this on while SHIFT,
      * ALPHA or HYP is active, so only the layer that is in use is drawn, in the large size.
      */
-    hideHints: Boolean = false
+    hideHints: Boolean = false,
+    /**
+     * Reserves a band at the top of the key for the small corner labels, so they never overlap the main label.
+     * The scientific keypad turns this on for every key (also keys without a corner label), which keeps all main
+     * labels of a row at the same height.
+     */
+    reserveHintRow: Boolean = false
 ) {
     val look = LocalCalcLook.current
     val c = look.colors
@@ -185,54 +200,108 @@ fun KeyButton(
             .semantics { contentDescription = spec.description },
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = spec.label,
-            color = content,
-            fontSize = textSize * look.fontScale,
-            fontWeight = if (spec.kind == KeyKind.DIGIT) FontWeight.Medium else FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false,
-            textAlign = TextAlign.Center
-        )
-        if (!hideHints && spec.hint != null && alphaHint == null) {
-            Text(
-                text = spec.hint,
-                color = content.copy(alpha = 0.6f),
-                fontSize = 10.sp * look.fontScale,
-                maxLines = 1,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 4.dp, end = 8.dp)
-                    .clearAndSetSemantics { }
-            )
+        val labelWeight = if (spec.kind == KeyKind.DIGIT) FontWeight.Medium else FontWeight.SemiBold
+        val labelSize = textSize * look.fontScale
+        if (reserveHintRow) {
+            // Scientific keypad: the key is split into two bands. The top band is only for the small SHIFT (left) and
+            // ALPHA (right) labels; the main label is centred in the band below. They can no longer be drawn on top of
+            // each other, and the main label sits at the same height on every key of the keypad.
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                HintBand(
+                    left = if (hideHints) null else shiftHint,
+                    right = if (hideHints) null else (alphaHint ?: spec.hint),
+                    leftColor = c.accent,
+                    rightColor = if (alphaHint != null) MaterialTheme.colorScheme.tertiary else content.copy(alpha = 0.6f),
+                    scale = look.fontScale
+                )
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    KeyLabel(spec.label, content, labelSize, labelWeight)
+                }
+            }
+        } else {
+            // Basic keypad: the long-press hint is drawn in the corner, as before.
+            KeyLabel(spec.label, content, labelSize, labelWeight)
+            if (!hideHints && spec.hint != null) {
+                Text(
+                    text = spec.hint,
+                    color = content.copy(alpha = 0.6f),
+                    fontSize = 10.sp * look.fontScale,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 4.dp, end = 8.dp)
+                        .clearAndSetSemantics { }
+                )
+            }
         }
-        if (!hideHints && shiftHint != null) {
+    }
+}
+
+/** Width of the longest label that still gets the normal hint size; longer pairs are drawn a little smaller. */
+private const val HINT_PAIR_LIMIT = 7
+
+/**
+ * The top band of a scientific key: SHIFT label at the left, ALPHA (or long-press) label at the right. The band has a
+ * fixed height even when it is empty, so every key keeps the same room for its main label. When both labels are long
+ * together (COPY + PASTE) they are drawn smaller instead of running into each other.
+ */
+@Composable
+private fun HintBand(left: String?, right: String?, leftColor: Color, rightColor: Color, scale: Float) {
+    val crowded = left != null && right != null && left.length + right.length > HINT_PAIR_LIMIT
+    val size = (if (crowded) 7.5f else 9f).sp * scale
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height((12f * scale).dp)
+            .padding(horizontal = 4.dp)
+            .clearAndSetSemantics { },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (left != null) {
             Text(
-                text = shiftHint,
-                color = c.accent,
-                fontSize = 9.sp * look.fontScale,
+                text = left,
+                color = leftColor,
+                fontSize = size,
+                lineHeight = size,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 2.dp, start = 5.dp)
-                    .clearAndSetSemantics { }
+                softWrap = false
             )
         }
-        if (!hideHints && alphaHint != null) {
+        Spacer(Modifier.weight(1f))
+        if (right != null) {
             Text(
-                text = alphaHint,
-                color = MaterialTheme.colorScheme.tertiary,
-                fontSize = 9.sp * look.fontScale,
+                text = right,
+                color = rightColor,
+                fontSize = size,
+                lineHeight = size,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 2.dp, end = 5.dp)
-                    .clearAndSetSemantics { }
+                softWrap = false
             )
         }
     }
+}
+
+/**
+ * The main label of a key. If the text is wider than the key (ALPHA, or CONST when SHIFT is on) it is made a little
+ * smaller until it fits, instead of being cut off at the edge.
+ */
+@Composable
+private fun KeyLabel(text: String, color: Color, size: TextUnit, weight: FontWeight) {
+    var shrink by remember(text, size) { mutableFloatStateOf(1f) }
+    Text(
+        text = text,
+        color = color,
+        fontSize = size * shrink,
+        fontWeight = weight,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = TextAlign.Center,
+        onTextLayout = { layout ->
+            if (layout.didOverflowWidth && shrink > 0.5f) shrink *= 0.88f
+        }
+    )
 }
 
 /** Lays out [keys] as equal-width cells of one keypad row (the operator column moves to the left for left-handed layouts). */

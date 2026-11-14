@@ -100,6 +100,9 @@ internal fun fitFontSize(availableDp: Float, length: Int, maxSp: Float, minSp: F
     return fits.coerceIn(minSp, maxSp)
 }
 
+/** Smallest size the scientific input line shrinks to before it wraps onto another row. */
+private const val EXPRESSION_MIN_SP = 28f
+
 private fun expressionFontSize(length: Int): Int = when {
     length <= 9 -> 56
     length <= 14 -> 44
@@ -278,7 +281,9 @@ private fun WorkingArea(state: DisplayState, scientific: Boolean, widthDp: Float
             }
         } else {
             val shownLength = Mk.stripMarkers(state.expression).length
-            val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, 20f) else expressionFontSize(shownLength).toFloat()).sp * scale
+            // The scientific line shrinks while it still fits on one row, down to EXPRESSION_MIN_SP. Past that it keeps
+            // that size and continues on the next row (MathText wraps it); it is never cut off at the edge.
+            val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, EXPRESSION_MIN_SP) else expressionFontSize(shownLength).toFloat()).sp * scale
             val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
             // the basic screen only shows the cursor when it is somewhere other than the end of the line
             val showCursor = scientific || cursor < state.expression.length
