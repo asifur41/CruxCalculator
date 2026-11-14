@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixed (update 10: keypad labels and long input)
+* **Small SHIFT / ALPHA labels no longer sit on top of the main key label.** Every key of the scientific keypad now has a
+  thin band at the top that is only for the small labels (SHIFT at the left, ALPHA or the long-press hint at the right);
+  the main label (`CALC`, `a/b`, `log`, `7`, `0`...) is centred in the space below it, at the same height on every key.
+  Before, both were drawn in the same place, so `SOLVE` ran over `CALC`, `10ˣ` over `log`, `CONST` over `7`, and
+  `COPY` and `PASTE` ran into each other on `0`. Where two corner labels are long together (`COPY` + `PASTE`) they are
+  drawn a little smaller. A main label that is wider than its key (`ALPHA`, or `CONST` while SHIFT is on) now shrinks to
+  fit instead of being cut off. The Basic keypad is unchanged.
+* **Long input continues on the next row instead of being cut off.** A line such as `78999999999999999999` or
+  `ans+ans+ans+ans+ans` was one piece that could not break, so it ran past the right edge of the screen. The line is now
+  cut into small pieces (`core-math/.../editor/LineBreaks.kt`, unit tested): digits in groups of four, names such as
+  `ans` and `sin(` kept whole, `)` never at the start of a row. Fractions, integrals and the other boxes are not split.
+  The scientific input shrinks only down to 28 sp (it used to go down to 20 sp and then overflow), and wraps from there.
+
 ### Added (update 9)
 * **Haptics and their settings.** Settings > Feedback now has a master **Haptics** switch. When it is on, two options
   appear: **Haptic Strong** (a heavier vibration on every key) and **Haptic Sound** (a click with each key press, the

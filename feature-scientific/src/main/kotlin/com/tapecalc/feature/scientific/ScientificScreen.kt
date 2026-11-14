@@ -250,7 +250,9 @@ private fun CasioRow(
                 highlighted = armed,
                 minHeight = minKeyHeight,
                 // While SHIFT, ALPHA or HYP is on, only the active layer is drawn; all small labels come back when it is off.
-                hideHints = shift || alpha || hyp
+                hideHints = shift || alpha || hyp,
+                // the small SHIFT / ALPHA labels get their own band at the top of the key, clear of the main label
+                reserveHintRow = true
             )
         }
     }
