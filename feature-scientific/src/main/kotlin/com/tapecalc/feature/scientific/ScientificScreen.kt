@@ -53,11 +53,12 @@ import kotlin.math.abs
  *     CALC   ∫dx    [ cursor pad ]  x⁻¹   logₓy
  *     a/b    √      x²    xʸ    log   ln
  *     (−)    °′″    hyp   sin   cos   tan
- *     RCL    ENG    ( )   x     S⇔D   M+
+ *     RCL    ENG    (     )     S⇔D   M+
  *     7  8  9  ⌫  AC     4  5  6  ×  ÷     1  2  3  +  −     0  .  Exp  Ans  =
  *
  * Every key has up to three layers: plain, SHIFT (small label top-left) and ALPHA (small label top-right).
- * Pressing SHIFT or ALPHA arms the next key only. The single "( )" key types "(" when tapped and ")" when held.
+ * Pressing SHIFT or ALPHA arms the next key only. "(" and ")" are separate keys, as on a Casio; the letters x and y sit on
+ * the ALPHA layer of ")" and S⇔D.
  */
 object SciKeys {
 
@@ -138,7 +139,8 @@ object SciKeys {
         CasioKey(
             fn("cos", "cos(", "Cosine"),
             shift = fn("cos⁻¹", "acos(", "Inverse cosine"),
-            alpha = fn("y", "y", "Variable y"),
+            // E is the reserved name of Euler's number here (it cannot hold a value), so this key types that constant
+            alpha = fn("E", "E", "Letter E, which is Euler's number"),
             hyp = fn("cosh", "cosh(", "Hyperbolic cosine"),
             shiftHyp = fn("cosh⁻¹", "acosh(", "Inverse hyperbolic cosine")
         ),
@@ -151,26 +153,28 @@ object SciKeys {
         )
     )
 
-    /** The single bracket key: tap for "(", hold for ")". It replaces the two bracket keys of the basic keypad. */
-    val bracket = CasioKey(
-        KeySpec(
-            label = "( )",
-            action = KeyAction.Insert("("),
-            kind = KeyKind.FUNCTION,
-            description = "Open parenthesis. Hold for close parenthesis",
-            hint = ")",
-            longAction = KeyAction.Insert(")"),
-            longDescription = "Close parenthesis"
-        ),
+    /** Open bracket. SHIFT gives the percent sign. */
+    val openBracket = CasioKey(
+        fn("(", "(", "Open parenthesis"),
         shift = fn("%", "%", "Percent")
+    )
+
+    /** Close bracket. SHIFT gives the comma between function arguments; ALPHA gives the letter x. */
+    val closeBracket = CasioKey(
+        fn(")", ")", "Close parenthesis"),
+        shift = fn(",", ",", "Comma, between function arguments"),
+        alpha = fn("x", "x", "The letter x")
     )
 
     val row4 = listOf(
         CasioKey(act("RCL", KeyAction.Recall, "Recall a variable"), shift = act("STO", KeyAction.Store, "Store the value in a variable")),
         CasioKey(act("ENG", KeyAction.CycleNotation, "Change the number format: normal, scientific, engineering")),
-        bracket,
-        CasioKey(fn("x", "x", "The letter x"), shift = fn(",", ",", "Comma, between function arguments")),
-        CasioKey(act("S⇔D", KeyAction.ToggleFraction, "Switch the result between fraction and decimal")),
+        openBracket,
+        closeBracket,
+        CasioKey(
+            act("S⇔D", KeyAction.ToggleFraction, "Switch the result between fraction and decimal"),
+            alpha = fn("y", "y", "The letter y")
+        ),
         CasioKey(
             act("M+", KeyAction.MemoryPlus, "Add to memory M"),
             shift = act("M−", KeyAction.MemoryMinus, "Subtract from memory M"),

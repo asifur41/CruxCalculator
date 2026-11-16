@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Changed (update 11: keypad letters, key centring, bigger spreadsheet)
+* **Separate "(" and ")" keys on the scientific keypad.** The single bracket key (tap for "(", hold for ")") is gone. The
+  key at the old bracket place now types "(" (SHIFT: `%`, as before); the key to its right, where `x` was, types ")" (SHIFT:
+  `,`).
+* **Letters on the ALPHA layer, like the Casio.** ALPHA + `)` types `x`, ALPHA + `S⇔D` types `y`, and ALPHA + `cos` now types
+  `E` (it was `y`). `x` no longer has a key of its own. `E` is Euler's number (the same as `e`): the name is reserved, so it
+  cannot hold a value, and CALC no longer asks for a value of `E`.
+* **The delete key and `=` are centred in their keys.** They sat in the lower band that the other keys use for their main
+  label; they now sit in the middle of the key. The small SHIFT / ALPHA labels, and every other key, are unchanged.
+* **Spreadsheet: 26 columns (A–Z) by 250 rows** (it was A–E by 45). The columns have a fixed width and scroll sideways
+  together; the column letters stay at the top and the row numbers at the left while you scroll. Sheets saved by the old
+  version load unchanged. `=sum(A1:Z250)` and the other range functions cover the whole grid; a cell or range outside
+  the grid (`A251`) gives a clear message. Names that end in 0 (`c0`, `Z0`, `G0`: physical constants) are read as constants
+  and no longer crash the formula.
+
 ### Fixed (update 10: keypad labels and long input)
 * **Small SHIFT / ALPHA labels no longer sit on top of the main key label.** Every key of the scientific keypad now has a
   thin band at the top that is only for the small labels (SHIFT at the left, ALPHA or the long-press hint at the right);

@@ -124,7 +124,7 @@ private val hubEntries: List<HubEntry> = buildList {
         add(HubEntry(tool.id, tool.title, tool.summary))
     }
     add(HubEntry(GRAPH_ID, "Graph", "Plot up to three functions, pan, zoom, trace, find roots and peaks"))
-    add(HubEntry(SHEET_ID, "Spreadsheet", "A grid of 5 columns (A–E) by 45 rows with formulas, sum and mean"))
+    add(HubEntry(SHEET_ID, "Spreadsheet", "A grid of 26 columns (A–Z) by 250 rows with formulas, sum and mean"))
     add(HubEntry(CONSTANTS_ID, "Constants", "${Constants.all.size} physical constants: tap one to use it"))
     add(HubEntry(QR_ID, "QR code", "Turn any text, result or equation into a QR code (works offline)"))
 }

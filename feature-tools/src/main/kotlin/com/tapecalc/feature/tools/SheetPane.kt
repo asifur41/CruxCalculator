@@ -12,8 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -33,8 +32,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tapecalc.core.math.AngleMode
@@ -48,23 +45,13 @@ import com.tapecalc.core.ui.ExpressionField
 import com.tapecalc.core.ui.LocalToolStateStore
 
 private const val SHEET_KEY = "tool.sheet.cells"
-private val ROW_HEADER_WIDTH = 34.dp
+private val ROW_HEADER_WIDTH = 40.dp
+private val CELL_WIDTH = 84.dp
 private val CELL_HEIGHT = 44.dp
 
-/** One narrow column for the row numbers, then A–E sharing the rest of the width equally. */
-private class SheetColumns(private val header: Dp) : GridCells {
-    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
-        val room = availableSize - spacing * SheetRef.COLS
-        val first = header.roundToPx().coerceIn(0, room / 3)
-        val rest = room - first
-        val each = rest / SheetRef.COLS
-        val extra = rest - each * SheetRef.COLS
-        return listOf(first) + List(SheetRef.COLS) { if (it < extra) each + 1 else each }
-    }
-}
-
 /**
- * The spreadsheet: a grid of 5 columns (A–E) by 45 rows. Tap a cell to select it and type in the box above the grid: a
+ * The spreadsheet: a grid of 26 columns (A–Z) by 250 rows. Drag up and down for the rows and left and right for the
+ * columns; the column letters and the row numbers stay in view. Tap a cell to select it and type in the box above the grid: a
  * number, a label, or a formula such as `=A1+B1`, `=sum(A1:A9)` or `=mean(B2:B20)`. Switch on "Select range" and tap a
  * second cell to select a block; its count, sum, mean, smallest and largest are shown, and the Σ and x̄ buttons write
  * the formula into the cell below (or beside) the block. The sheet is kept on the device as it is edited.
@@ -202,30 +189,31 @@ internal fun SheetPane(
         }
         notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
 
+        // All rows share one horizontal scroll position, so the columns move together; the row numbers (left) and the
+        // column letters (top) stay where they are.
+        val columnScroll = rememberScrollState()
+
         // column letters, lined up with the grid below
         Row(Modifier.fillMaxWidth()) {
             Box(Modifier.width(ROW_HEADER_WIDTH))
-            for (c in 0 until SheetRef.COLS) {
-                Text(
-                    "${'A' + c}",
-                    modifier = Modifier.weight(1f),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (c in range.left..range.right) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(Modifier.weight(1f).horizontalScroll(columnScroll)) {
+                for (c in 0 until SheetRef.COLS) {
+                    Text(
+                        "${'A' + c}",
+                        modifier = Modifier.width(CELL_WIDTH),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (c in range.left..range.right) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
-        LazyVerticalGrid(
-            columns = SheetColumns(ROW_HEADER_WIDTH),
-            modifier = Modifier.weight(1f).fillMaxWidth()
-        ) {
-            items(count = SheetRef.ROWS * (SheetRef.COLS + 1), key = { it }) { slot ->
-                val row = slot / (SheetRef.COLS + 1)
-                val k = slot % (SheetRef.COLS + 1)
-                if (k == 0) {
-                    Box(Modifier.height(CELL_HEIGHT), contentAlignment = Alignment.Center) {
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(count = SheetRef.ROWS, key = { it }) { row ->
+                Row(Modifier.fillMaxWidth().height(CELL_HEIGHT)) {
+                    Box(Modifier.width(ROW_HEADER_WIDTH).height(CELL_HEIGHT), contentAlignment = Alignment.Center) {
                         Text(
                             "${row + 1}",
                             style = MaterialTheme.typography.labelMedium,
@@ -233,14 +221,16 @@ internal fun SheetPane(
                             color = if (row in range.top..range.bottom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                } else {
-                    val col = k - 1
-                    SheetCell(
-                        value = values[col, row],
-                        active = col == anchorCol && row == anchorRow,
-                        inRange = range.contains(col, row),
-                        onClick = { select(col, row) }
-                    )
+                    Row(Modifier.weight(1f).horizontalScroll(columnScroll)) {
+                        for (col in 0 until SheetRef.COLS) {
+                            SheetCell(
+                                value = values[col, row],
+                                active = col == anchorCol && row == anchorRow,
+                                inRange = range.contains(col, row),
+                                onClick = { select(col, row) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -264,6 +254,7 @@ private fun SheetCell(value: CellValue, active: Boolean, inRange: Boolean, onCli
     val border = if (active) colors.primary else colors.outlineVariant
     Box(
         modifier = Modifier
+            .width(CELL_WIDTH)
             .height(CELL_HEIGHT)
             .background(background)
             .border(if (active) 2.dp else 0.5.dp, border)

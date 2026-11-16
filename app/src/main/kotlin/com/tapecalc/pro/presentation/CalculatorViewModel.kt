@@ -434,7 +434,7 @@ class CalculatorViewModel @Inject constructor(
         val bound = bindingFunction.containsMatchIn(text)
         val known = variables.value.map { it.name }.toSet()
         return freeLetter.findAll(text).map { it.groupValues[1] }
-            .filter { it != "e" && it !in known && !(bound && it == "x") }
+            .filter { !it.equals("e", ignoreCase = true) && it !in known && !(bound && it == "x") }
             .distinct().toList()
     }
 

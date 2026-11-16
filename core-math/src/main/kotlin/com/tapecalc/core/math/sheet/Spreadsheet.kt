@@ -6,10 +6,13 @@ import com.tapecalc.core.math.Calculator
 import com.tapecalc.core.math.EvalContext
 import com.tapecalc.core.math.EvalOutcome
 
-/** Cell names: columns A–E, rows 1–45. */
+/** Cell names: columns A–Z, rows 1–250. */
 object SheetRef {
-    const val COLS = 5
-    const val ROWS = 45
+    const val COLS = 26
+    const val ROWS = 250
+
+    /** The largest cell name, for messages. */
+    const val LAST_NAME = "Z250"
     const val CELLS = COLS * ROWS
 
     fun index(col: Int, row: Int): Int = row * COLS + col
@@ -96,7 +99,7 @@ class SheetValues internal constructor(private val values: List<CellValue>) {
     }
 }
 
-/** What is typed in the 5 × 45 cells. An immutable value: every edit returns a new one. */
+/** What is typed in the 26 × 250 cells. An immutable value: every edit returns a new one. */
 class SheetState private constructor(private val raw: List<String>) {
 
     constructor() : this(List(SheetRef.CELLS) { "" })
@@ -178,8 +181,8 @@ object SheetEngine {
 
     private class Failure(override val message: String, val short: String = "#ERR") : RuntimeException(message, null, false, false)
 
-    private val RANGE = Regex("""(?<![A-Za-z0-9_.])([A-Ea-e])([0-9]{1,2}):([A-Ea-e])([0-9]{1,2})(?![A-Za-z0-9_(])""")
-    private val REF = Regex("""(?<![A-Za-z0-9_.])([A-Ea-e][0-9]{1,2})(?![A-Za-z0-9_(])""")
+    private val RANGE = Regex("""(?<![A-Za-z0-9_.])([A-Za-z])([0-9]{1,3}):([A-Za-z])([0-9]{1,3})(?![A-Za-z0-9_(])""")
+    private val REF = Regex("""(?<![A-Za-z0-9_.])([A-Za-z][0-9]{1,3})(?![A-Za-z0-9_(])""")
     private val CALL = Regex("""(?<![A-Za-z0-9_])(sum|mean|avg|average|min|max|count)\s*\(([^()]*)\)""", RegexOption.IGNORE_CASE)
     private val PLAIN_NUMBER = Regex("""[0-9\s.,+\-*/^()%eE]+""")
 
@@ -227,7 +230,17 @@ object SheetEngine {
             if (RANGE.containsMatchIn(expr)) throw Failure("A range such as A1:A5 goes inside sum( ), mean( ), min( ), max( ) or count( )")
             // 3. the remaining cell names stand for their values
             expr = REF.replace(expr) { m ->
-                val (c, r) = SheetRef.parse(m.groupValues[1])!!
+                val name = m.groupValues[1]
+                val at = SheetRef.parse(name)
+                if (at == null) {
+                    // Row 0 (G0, Z0, c0 ... are physical constants) is not a cell: the calculator reads it as it is.
+                    // A row above 250 (A251) is a cell that does not exist.
+                    if (name.substring(1).toInt() > SheetRef.ROWS) {
+                        throw Failure("${name.uppercase()} is outside the grid (A1 to ${SheetRef.LAST_NAME})")
+                    }
+                    return@replace name
+                }
+                val (c, r) = at
                 when (val v = cell(SheetRef.index(c, r))) {
                     is CellValue.Num -> literal(v.value)
                     is CellValue.Empty -> "0"
@@ -254,7 +267,7 @@ object SheetEngine {
                     range != null -> {
                         val a = SheetRef.parse(range.groupValues[1] + range.groupValues[2])
                         val b = SheetRef.parse(range.groupValues[3] + range.groupValues[4])
-                        if (a == null || b == null) throw Failure("${arg.uppercase()} is outside the grid (A1 to E45)")
+                        if (a == null || b == null) throw Failure("${arg.uppercase()} is outside the grid (A1 to ${SheetRef.LAST_NAME})")
                         for (i in CellRange(a.first, a.second, b.first, b.second).indices()) collect(i, numbers)
                     }
                     single != null -> collect(SheetRef.index(single.first, single.second), numbers)

@@ -32,17 +32,27 @@ class SpreadsheetTest {
         }
     }
 
-    @Test fun gridIsFiveByFortyFive() {
-        assertEquals(5, SheetRef.COLS)
-        assertEquals(45, SheetRef.ROWS)
+    @Test fun gridIs26By250() {
+        assertEquals(26, SheetRef.COLS)
+        assertEquals(250, SheetRef.ROWS)
+        assertEquals(6500, SheetRef.CELLS)
         assertEquals("A1", SheetRef.name(0, 0))
         assertEquals("E45", SheetRef.name(4, 44))
+        assertEquals("Z250", SheetRef.name(25, 249))
+        assertEquals("Z250", SheetRef.LAST_NAME)
         assertEquals(4 to 44, SheetRef.parse("e45"))
-        assertNull(SheetRef.parse("F1"))
-        assertNull(SheetRef.parse("A46"))
+        assertEquals(5 to 0, SheetRef.parse("F1"))
+        assertEquals(25 to 249, SheetRef.parse("z250"))
+        assertEquals(0 to 249, SheetRef.parse("A250"))
+        assertNull(SheetRef.parse("A251"))
+        assertNull(SheetRef.parse("AA1"))
         assertNull(SheetRef.parse("A0"))
         assertNull(SheetRef.parse("A"))
         assertNull(SheetRef.parse("A1x"))
+        // every index maps back to its own column and row
+        assertEquals(25, SheetRef.colOf(SheetRef.index(25, 249)))
+        assertEquals(249, SheetRef.rowOf(SheetRef.index(25, 249)))
+        assertEquals(SheetRef.CELLS - 1, SheetRef.index(25, 249))
     }
 
     @Test fun plainCellsAreNumbersOrLabels() {
@@ -124,8 +134,46 @@ class SpreadsheetTest {
     }
 
     @Test fun rangeOutsideTheGridIsAnError() {
-        // A1:F1 is not matched as a range, so the calculator reports it
-        assertTrue(show(sheet("A1" to "=sum(A1:F1)"), "A1").startsWith("#"))
+        // row 251 does not exist
+        assertEquals("#ERR:A1:A251 is outside the grid (A1 to Z250)", show(sheet("A1" to "=sum(A1:A251)"), "A1"))
+        // AA1 is no column: the range is not recognised and the calculator reports it
+        assertTrue(show(sheet("A1" to "=sum(A1:AA1)"), "A1").startsWith("#"))
+        // a single cell outside the grid
+        assertEquals("#ERR:A251 is outside the grid (A1 to Z250)", show(sheet("A1" to "=A251+1"), "A1"))
+    }
+
+    @Test fun allColumnsAndRowsAreUsable() {
+        val s = sheet(
+            "A1" to "1", "Z1" to "2", "A250" to "3", "Z250" to "4", "M100" to "5",
+            "B1" to "=A1+Z1", "B2" to "=a250*z250", "B3" to "=M100+B2", "B4" to "=sum(A1:Z250)"
+        )
+        assertEquals("3", show(s, "B1"))
+        assertEquals("12", show(s, "B2"))
+        assertEquals("17", show(s, "B3"))
+        // B4 is inside A1:Z250, so it would refer to itself
+        assertTrue(show(s, "B4").startsWith("#CYCLE"))
+        val t = sheet("A1" to "1", "Z1" to "2", "A250" to "3", "Z250" to "4", "M100" to "5", "C1" to "=sum(A1:A250)",
+            "C2" to "=sum(Z1:Z250)", "C3" to "=count(M1:M250)", "C4" to "=max(A1:B250)")
+        assertEquals("4", show(t, "C1"))
+        assertEquals("6", show(t, "C2"))
+        assertEquals("1", show(t, "C3"))
+        assertEquals("3", show(t, "C4"))
+    }
+
+    @Test fun threeDigitRowsAreNotMistakenForOtherThings() {
+        val s = sheet("B100" to "7", "B101" to "8", "B250" to "=B100*B101", "A1" to "=B250+1", "A2" to "=2e3+B100")
+        assertEquals("56", show(s, "B250"))
+        assertEquals("57", show(s, "A1"))
+        // 2e3 is scientific notation, not the cell E3
+        assertEquals("2007", show(s, "A2"))
+    }
+
+    @Test fun nameOfAPhysicalConstantIsNotACell() {
+        // c0, Z0 and G0 end in row 0, which is not a cell, so the calculator reads them as constants
+        val c0 = show(sheet("A1" to "=c0"), "A1")
+        assertTrue(c0, !c0.startsWith("#"))
+        val z0 = show(sheet("A1" to "=Z0*0+1"), "A1")
+        assertEquals("1", z0)
     }
 
     @Test fun angleUnitFollowsTheCalculator() {
@@ -152,9 +200,13 @@ class SpreadsheetTest {
         assertEquals(0 to 5, SheetEngine.autoSumTarget(CellRange(0, 0, 0, 4)))
         assertEquals(2 to 0, SheetEngine.autoSumTarget(CellRange(0, 0, 1, 0)))   // a row: to the right
         assertEquals(4 to 1, SheetEngine.autoSumTarget(CellRange(4, 0, 4, 0)))
-        assertNull(SheetEngine.autoSumTarget(CellRange(0, 40, 0, 44)))
-        // a row that already reaches column E has no room on the right: it goes below
-        assertEquals(0 to 1, SheetEngine.autoSumTarget(CellRange(0, 0, 4, 0)))
+        assertEquals(0 to 45, SheetEngine.autoSumTarget(CellRange(0, 40, 0, 44)))
+        assertNull(SheetEngine.autoSumTarget(CellRange(0, 245, 0, 249)))
+        // a row of A–E now has room on the right (column F)
+        assertEquals(5 to 0, SheetEngine.autoSumTarget(CellRange(0, 0, 4, 0)))
+        // a row that already reaches column Z has no room on the right: it goes below
+        assertEquals(0 to 1, SheetEngine.autoSumTarget(CellRange(0, 0, 25, 0)))
+        assertNull(SheetEngine.autoSumTarget(CellRange(0, 249, 25, 249)))
         assertEquals("=sum(A1:A5)", SheetEngine.formula("sum", CellRange(0, 4, 0, 0)))
         assertEquals("=mean(B2)", SheetEngine.formula("mean", CellRange(1, 1, 1, 1)))
     }
@@ -167,23 +219,33 @@ class SpreadsheetTest {
         assertTrue(a === a.with(0, 0, ""))
         assertEquals("1 2", a.with(0, 0, "1\n2").text(0, 0))
         assertEquals(SheetState.MAX_CELL, a.with(0, 0, "x".repeat(500)).text(0, 0).length)
-        assertTrue(a === a.with(9, 9, "x"))
+        assertTrue(a === a.with(26, 0, "x"))   // no column AA
+        assertTrue(a === a.with(0, 250, "x"))  // no row 251
         assertEquals("", b.withCleared(CellRange(0, 0, 0, 0)).text(0, 0))
         assertEquals(0, b.cleared().filledCells)
     }
 
     @Test fun savingAndLoadingRoundTrips() {
-        val s = sheet("A1" to "5", "E45" to "=sum(A1:A44)", "C3" to "label with spaces")
+        val s = sheet("A1" to "5", "Z250" to "=sum(A1:A249)", "C3" to "label with spaces", "M120" to "=A1*2")
         val back = SheetState.decode(s.encode())
         assertEquals(s, back)
-        assertEquals(3, back.filledCells)
+        assertEquals(4, back.filledCells)
         assertEquals(SheetState(), SheetState.decode(null))
-        assertEquals(SheetState(), SheetState.decode("garbage\nZ9\tnope\n\tno"))
+        // text that names no cell of the grid is ignored (AA9: no such column, Z251 and A0: no such row)
+        assertEquals(SheetState(), SheetState.decode("garbage\nAA9\tnope\nZ251\tnope\nA0\tnope\n\tno"))
+    }
+
+    @Test fun sheetsSavedWithTheOldFiveByFortyFiveGridStillLoad() {
+        val old = "A1\t10\nA2\t20\nE45\t=sum(A1:A2)\nB3\tlabel"
+        val s = SheetState.decode(old)
+        assertEquals(3 + 1, s.filledCells)
+        assertEquals("30", show(s, "E45"))
+        assertEquals("label", s.text(1, 2))
     }
 
     @Test fun aFullGridOfFormulasIsFast() {
         var s = SheetState()
-        for (r in 0 until 45) {
+        for (r in 0 until SheetRef.ROWS) {
             s = s.with(0, r, "${r + 1}")
             if (r > 0) s = s.with(1, r, "=${SheetRef.name(1, r - 1)}+${SheetRef.name(0, r)}")
             s = s.with(2, r, "=sum(A1:A${r + 1})")
@@ -191,7 +253,18 @@ class SpreadsheetTest {
         val t = System.nanoTime()
         val v = SheetEngine.evaluate(s, ctx)
         val ms = (System.nanoTime() - t) / 1_000_000
-        assertTrue("took $ms ms", ms < 1500)
-        assertEquals("1035", (v[2, 44] as CellValue.Num).value.toString())
+        assertTrue("took $ms ms", ms < 3000)
+        assertEquals("31375", (v[2, 249] as CellValue.Num).value.toString())
+        assertEquals("31374", (v[1, 249] as CellValue.Num).value.toString())   // the chain starts at A2
+    }
+
+    @Test fun editingOneCellOfAFullSheetIsFast() {
+        var s = SheetState()
+        for (r in 0 until SheetRef.ROWS) for (c in 0 until SheetRef.COLS) s = s.with(c, r, "${r + c}")
+        assertEquals(SheetRef.CELLS, s.filledCells)
+        val t = System.nanoTime()
+        repeat(20) { i -> s = s.with(i % SheetRef.COLS, 7, "x$i") }
+        val ms = (System.nanoTime() - t) / 1_000_000
+        assertTrue("took $ms ms", ms < 1000)
     }
 }

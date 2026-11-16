@@ -206,16 +206,25 @@ fun KeyButton(
             // Scientific keypad: the key is split into two bands. The top band is only for the small SHIFT (left) and
             // ALPHA (right) labels; the main label is centred in the band below. They can no longer be drawn on top of
             // each other, and the main label sits at the same height on every key of the keypad.
-            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-                HintBand(
-                    left = if (hideHints) null else shiftHint,
-                    right = if (hideHints) null else (alphaHint ?: spec.hint),
-                    leftColor = c.accent,
-                    rightColor = if (alphaHint != null) MaterialTheme.colorScheme.tertiary else content.copy(alpha = 0.6f),
-                    scale = look.fontScale
-                )
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    KeyLabel(spec.label, content, labelSize, labelWeight)
+            val leftHint = if (hideHints) null else shiftHint
+            val rightHint = if (hideHints) null else (alphaHint ?: spec.hint)
+            val rightColor = if (alphaHint != null) MaterialTheme.colorScheme.tertiary else content.copy(alpha = 0.6f)
+            // The delete key and "=" are filled keys with a single symbol on them. A symbol sitting in the lower band
+            // looks too low there, so these two are centred in the whole key; the small labels stay in the top band.
+            val centreInKey = spec.action == KeyAction.Backspace || spec.kind == KeyKind.EQUALS
+            if (centreInKey) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        KeyLabel(spec.label, content, labelSize, labelWeight)
+                    }
+                    HintBand(left = leftHint, right = rightHint, leftColor = c.accent, rightColor = rightColor, scale = look.fontScale)
+                }
+            } else {
+                Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    HintBand(left = leftHint, right = rightHint, leftColor = c.accent, rightColor = rightColor, scale = look.fontScale)
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        KeyLabel(spec.label, content, labelSize, labelWeight)
+                    }
                 }
             }
         } else {
