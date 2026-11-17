@@ -285,6 +285,6 @@ class MathEditorTest {
     @Test
     fun typingAfterMoveToInsertsAtTheTappedPlace() {
         val moved = MathEditor.moveTo(EditorState("12+34", 5), 2)
-        assertEquals("125+34", MathEditor.insert(moved, "5").text)
+        assertEquals("125+34", MathEditor.insert(moved, "5", afterResult = false).text)
     }
 }
