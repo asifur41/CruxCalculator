@@ -267,4 +267,24 @@ class MathEditorTest {
         assertEquals("5+10^(", type("5", "+", MathEditor.EXP).text)
         assertEquals(6, type("5", MathEditor.EXP).cursor)
     }
+
+    @Test
+    fun moveToPutsTheCursorWhereTheFingerIs() {
+        val s = EditorState("12+34", 5)
+        assertEquals(2, MathEditor.moveTo(s, 2).cursor)
+        assertEquals("12+34", MathEditor.moveTo(s, 2).text)
+    }
+
+    @Test
+    fun moveToStaysInsideTheLine() {
+        val s = EditorState("12+34", 5)
+        assertEquals(0, MathEditor.moveTo(s, -3).cursor)
+        assertEquals(5, MathEditor.moveTo(s, 99).cursor)
+    }
+
+    @Test
+    fun typingAfterMoveToInsertsAtTheTappedPlace() {
+        val moved = MathEditor.moveTo(EditorState("12+34", 5), 2)
+        assertEquals("125+34", MathEditor.insert(moved, "5").text)
+    }
 }

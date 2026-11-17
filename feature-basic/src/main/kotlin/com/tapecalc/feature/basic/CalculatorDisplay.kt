@@ -285,8 +285,8 @@ private fun WorkingArea(state: DisplayState, scientific: Boolean, widthDp: Float
             // that size and continues on the next row (MathText wraps it); it is never cut off at the edge.
             val fontSp = (if (scientific) fitFontSize(widthDp, shownLength, 44f, EXPRESSION_MIN_SP) else expressionFontSize(shownLength).toFloat()).sp * scale
             val cursor = if (state.cursor < 0 || state.cursor > state.expression.length) state.expression.length else state.cursor
-            // the basic screen only shows the cursor when it is somewhere other than the end of the line
-            val showCursor = scientific || cursor < state.expression.length
+            // both screens show the cursor whenever there is something on the line; tapping or dragging on the line moves it
+            val showCursor = scientific || state.expression.isNotEmpty()
             if (state.expression.isEmpty() && !showCursor) {
                 Text(text = "0", color = muted, textAlign = TextAlign.End, fontSize = fontSp, fontWeight = FontWeight.Medium)
             } else {
@@ -294,7 +294,8 @@ private fun WorkingArea(state: DisplayState, scientific: Boolean, widthDp: Float
                     text = state.expression,
                     cursor = if (showCursor) cursor else null,
                     fontSize = fontSp,
-                    color = onBg
+                    color = onBg,
+                    onCursorTo = { actions.onAction(KeyAction.MoveTo(it)) }
                 )
             }
             if (state.error != null) {

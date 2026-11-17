@@ -29,6 +29,9 @@ object MathEditor {
 
     fun fromText(text: String) = EditorState(text, text.length)
 
+    /** Puts the cursor at [position], kept inside the line. Used when the line is tapped or the cursor is dragged. */
+    fun moveTo(state: EditorState, position: Int): EditorState = state.withCursor(position)
+
     /** The engine text for [state], and whether a template box was left empty. */
     fun engineText(state: EditorState): EngineText = MathEngineText.convert(state.text)
 

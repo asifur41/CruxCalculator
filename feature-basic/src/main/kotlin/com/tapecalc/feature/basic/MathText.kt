@@ -8,6 +8,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,17 +27,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,10 +61,47 @@ private val AlwaysVisible: State<Float> = mutableStateOf(1f)
 private val LocalCursorBlink = compositionLocalOf { AlwaysVisible }
 
 /**
+ * Where the drawn pieces of the line are on screen, so a touch can be turned into a cursor position. Every piece of text
+ * and every empty template box adds an entry while it is on screen and removes it when it leaves.
+ */
+internal class CaretRegistry {
+    class Entry(val target: CaretTarget) {
+        var coords: LayoutCoordinates? = null
+    }
+
+    private val entries = ArrayList<Entry>()
+    var container: LayoutCoordinates? = null
+
+    fun add(e: Entry) { entries.add(e) }
+    fun remove(e: Entry) { entries.remove(e) }
+
+    /** The cursor index for a touch at ([x], [y]) in the container's own coordinates, or null when nothing is drawn. */
+    fun pick(x: Float, y: Float): Int? {
+        val box = container?.takeIf { it.isAttached } ?: return null
+        val origin = box.positionInRoot()
+        // positions are read now, not remembered, so a line that was scrolled or reflowed is always measured as it is
+        val targets = entries.mapNotNull { e ->
+            val c = e.coords?.takeIf { it.isAttached } ?: return@mapNotNull null
+            val p = c.positionInRoot()
+            e.target.place(p.x, p.y, p.x + c.size.width, p.y + c.size.height)
+            e.target
+        }
+        return CaretHit.pick(targets, origin.x + x, origin.y + y)
+    }
+}
+
+private val LocalCaretRegistry = compositionLocalOf<CaretRegistry?> { null }
+
+/**
  * Draws an input line the way a natural-display calculator does: ordinary text, with fractions stacked over a
  * line, log with a small base, integrals with limits and so on, and an empty box wherever something still has
  * to be typed. [cursor] is the text position of the blinking cursor, or null for a read-only line.
  * Long lines wrap onto further lines.
+ *
+ * With [onCursorTo] the line can be touched: a tap puts the cursor at the nearest position between two characters (or in
+ * the nearest empty box), and dragging sideways moves it along with the finger. The touch area is the full width of the
+ * line, so tapping to the left of a short, right-aligned number puts the cursor at its start. Vertical swipes are left to
+ * the screen so it can still scroll.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,7 +111,8 @@ fun MathText(
     fontSize: TextUnit,
     color: Color,
     modifier: Modifier = Modifier,
-    weight: FontWeight = FontWeight.Medium
+    weight: FontWeight = FontWeight.Medium,
+    onCursorTo: ((Int) -> Unit)? = null
 ) {
     val nodes = remember(text) { MathTree.parse(text) }
     val blink: State<Float> = if (cursor != null) {
@@ -78,7 +124,9 @@ fun MathText(
             label = "cursorAlpha"
         )
     } else AlwaysVisible
-    CompositionLocalProvider(LocalCursorBlink provides blink) {
+    val registry = remember { CaretRegistry() }
+    val latest by rememberUpdatedState(onCursorTo)
+    val line: @Composable () -> Unit = {
         FlowRow(
             modifier = modifier,
             horizontalArrangement = Arrangement.End,
@@ -87,6 +135,41 @@ fun MathText(
             // wrap = true: only the top level of the line may break onto a further row. The boxes inside a fraction,
             // integral and so on stay in one piece.
             Nodes(nodes, cursor, fontSize, color, weight, wrap = true)
+        }
+    }
+    CompositionLocalProvider(
+        LocalCursorBlink provides blink,
+        LocalCaretRegistry provides (if (onCursorTo != null) registry else null)
+    ) {
+        if (onCursorTo == null) {
+            line()
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { registry.container = it }
+                    .pointerInput(registry) {
+                        detectTapGestures { at -> registry.pick(at.x, at.y)?.let { latest?.invoke(it) } }
+                    }
+                    .pointerInput(registry) {
+                        var last = -1
+                        detectHorizontalDragGestures(
+                            onDragStart = { at ->
+                                last = registry.pick(at.x, at.y)?.also { latest?.invoke(it) } ?: -1
+                            },
+                            onHorizontalDrag = { change, _ ->
+                                change.consume()
+                                val to = registry.pick(change.position.x, change.position.y)
+                                // only report a change, so the cursor (and the key feedback) steps once per character
+                                if (to != null && to != last) {
+                                    last = to
+                                    latest?.invoke(to)
+                                }
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.CenterEnd
+            ) { line() }
         }
     }
 }
@@ -105,30 +188,62 @@ private fun Nodes(nodes: List<MathNode>, cursor: Int?, fs: TextUnit, color: Colo
  * One piece of text. With [wrap] the text is cut into small chunks ([LineBreaks]) that are separate children of the
  * FlowRow, so a long run such as `78999999999999999999` or `ans+ans+ans+ans+ans` can continue on the next row. Before,
  * the whole run was a single piece that could not break and was cut off at the edge of the screen.
+ *
+ * [start] is the index in the whole input line of the piece's first character, or -1 for text that is not part of the
+ * input (the "log" of a log template, say), which cannot be touched.
  */
 @Composable
-private fun Piece(text: String, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false) {
+private fun Piece(text: String, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false, start: Int = -1) {
     if (text.isEmpty()) return
     val style = TextStyle(fontSize = fs, fontWeight = weight, fontFeatureSettings = "tnum")
     if (!wrap) {
-        Text(text = text, color = color, style = style, softWrap = false)
+        CaretText(text, start, color, style)
         return
     }
     val chunks = remember(text) { LineBreaks.chunks(text) }
+    var at = start
     for (chunk in chunks) {
-        Text(text = chunk, color = color, style = style, softWrap = false)
+        CaretText(chunk, at, color, style)
+        if (at >= 0) at += chunk.length
     }
+}
+
+/** A piece of text that reports where it is (and where each character starts) when the line can be touched. */
+@Composable
+private fun CaretText(text: String, start: Int, color: Color, style: TextStyle) {
+    val registry = LocalCaretRegistry.current
+    if (registry == null || start < 0) {
+        Text(text = text, color = color, style = style, softWrap = false)
+        return
+    }
+    val entry = remember(start, text.length) {
+        CaretRegistry.Entry(CaretTarget().also { it.start = start; it.length = text.length })
+    }
+    DisposableEffect(entry, registry) {
+        registry.add(entry)
+        onDispose { registry.remove(entry) }
+    }
+    Text(
+        text = text,
+        color = color,
+        style = style,
+        softWrap = false,
+        modifier = Modifier.onGloballyPositioned { entry.coords = it },
+        onTextLayout = { layout ->
+            entry.target.boundaries = FloatArray(text.length + 1) { layout.getHorizontalPosition(it, true) }
+        }
+    )
 }
 
 @Composable
 private fun Run(run: RunNode, cursor: Int?, fs: TextUnit, color: Color, weight: FontWeight, wrap: Boolean = false) {
     if (cursor != null && cursor >= run.start && cursor <= run.end) {
         val cut = cursor - run.start
-        Piece(run.text.substring(0, cut), fs, color, weight, wrap)
+        Piece(run.text.substring(0, cut), fs, color, weight, wrap, run.start)
         Caret(fs)
-        Piece(run.text.substring(cut), fs, color, weight, wrap)
+        Piece(run.text.substring(cut), fs, color, weight, wrap, run.start + cut)
     } else {
-        Piece(run.text, fs, color, weight, wrap)
+        Piece(run.text, fs, color, weight, wrap, run.start)
     }
 }
 
@@ -152,9 +267,18 @@ private fun Slot(slot: SlotNode, cursor: Int?, fs: TextUnit, color: Color, weigh
     if (slot.isEmpty) {
         val box = with(LocalDensity.current) { (fs * 0.75f).toDp() }
         val tall = with(LocalDensity.current) { (fs * 1.0f).toDp() }
+        val registry = LocalCaretRegistry.current
+        val entry = remember(slot.start) { CaretRegistry.Entry(CaretTarget().also { it.start = slot.start; it.length = 0 }) }
+        if (registry != null) {
+            DisposableEffect(entry, registry) {
+                registry.add(entry)
+                onDispose { registry.remove(entry) }
+            }
+        }
         Box(
             modifier = Modifier
                 .size(width = box, height = tall)
+                .onGloballyPositioned { entry.coords = it }
                 .border(1.dp, color.copy(alpha = 0.55f), RoundedCornerShape(3.dp)),
             contentAlignment = Alignment.Center
         ) {

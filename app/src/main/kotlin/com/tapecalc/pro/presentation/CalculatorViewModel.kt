@@ -296,6 +296,7 @@ class CalculatorViewModel @Inject constructor(
             KeyAction.Hyp -> _ui.update { it.copy(hyp = !it.hyp) }
             KeyAction.ClearModifiers -> clearModifiers()
             is KeyAction.Move -> move(action.direction)
+            is KeyAction.MoveTo -> moveTo(action.position)
             is KeyAction.Template -> _ui.update { s ->
                 s.withEditor(MathEditor.insertTemplate(s.editor, action.open, afterResult = s.committed != null)).copy(pending = null)
             }
@@ -314,8 +315,9 @@ class CalculatorViewModel @Inject constructor(
             KeyAction.Calc, KeyAction.OpenMode, KeyAction.OpenTape, is KeyAction.OpenTool -> Unit
         }
         // SHIFT, ALPHA and HYP apply to the next key only (STO / RCL keep ALPHA on for the letter that follows).
+        // Touching the line to place the cursor is not a key press, so it leaves a pending SHIFT / ALPHA alone too.
         if (action !is KeyAction.Shift && action !is KeyAction.Alpha && action !is KeyAction.Hyp &&
-            action !is KeyAction.Store && action !is KeyAction.Recall
+            action !is KeyAction.Store && action !is KeyAction.Recall && action !is KeyAction.MoveTo
         ) clearModifiers()
     }
 
@@ -359,6 +361,19 @@ class CalculatorViewModel @Inject constructor(
         }
         // up / down with no box to go to: browse the earlier lines of the tape (like a Casio's replay)
         replay(base, older = direction == Dir.UP)
+    }
+
+    /**
+     * A tap or drag on the input line. After "=" the line that was just calculated is re-opened for editing (the same as
+     * pressing an arrow key) with the cursor where the finger is.
+     */
+    private fun moveTo(position: Int) {
+        _ui.update { s ->
+            val c = s.committed
+            val base = if (c != null) s.copy(expression = c.shown, cursor = -1, committed = null, fractionOverride = null, error = null) else s
+            val next = MathEditor.moveTo(base.editor, position)
+            if (c == null && next.cursor == base.editor.cursor) base else base.copy(cursor = next.cursor)
+        }
     }
 
     private fun replay(s: CalcUiState, older: Boolean) {

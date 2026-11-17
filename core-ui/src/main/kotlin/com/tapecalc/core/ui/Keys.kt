@@ -57,6 +57,8 @@ sealed interface KeyAction {
     /** Clears a pending SHIFT / ALPHA / HYP after a key that the app root handled itself. */
     data object ClearModifiers : KeyAction
     data class Move(val direction: Dir) : KeyAction
+    /** Puts the cursor at [position] (a character index of the input line), from a tap or drag on the line itself. */
+    data class MoveTo(val position: Int) : KeyAction
     /** Inserts a template (fraction, log with base, integral...); [open] is the template's marker character. */
     data class Template(val open: Char) : KeyAction
     data object Store : KeyAction
