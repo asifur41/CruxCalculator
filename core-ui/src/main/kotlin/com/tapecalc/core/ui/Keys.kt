@@ -213,7 +213,7 @@ fun KeyButton(
             val rightColor = if (alphaHint != null) MaterialTheme.colorScheme.tertiary else content.copy(alpha = 0.6f)
             // The delete key and "=" are filled keys with a single symbol on them. A symbol sitting in the lower band
             // looks too low there, so these two are centred in the whole key; the small labels stay in the top band.
-            val centreInKey = spec.action == KeyAction.Backspace || spec.kind == KeyKind.EQUALS
+            val centreInKey = spec.action == KeyAction.Backspace|| spec.action == KeyAction.AllClear || spec.kind == KeyKind.EQUALS
             if (centreInKey) {
                 Box(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
