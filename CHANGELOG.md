@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Added (Randomizer tool)
+* **New "Randomizer" tool in the Tools tab** (works offline, no new dependency). A mode chip switches between four things:
+  * **Coin**: flip 1 to 100 coins; every result is listed (Heads / Tails) with the heads and tails totals.
+  * **Dice**: roll 1 to 100 dice. Chips for d4, d6, d8, d10, d12, d20 and d100, or **Custom** for any number of sides from 2 to
+    1,000,000. Shows every roll and the total.
+  * **Number**: a random whole number from a minimum to a maximum, both included. Negative numbers work.
+  * **Picker**: type choices one per line and pick one (blank lines and spaces are ignored; a name typed twice is twice as likely).
+* **Clear messages for bad input**, each naming the box and the allowed values, for example "Minimum (9) is larger than
+  maximum (2). Make the maximum at least 9." or "Enter at least one choice, one per line." Errors are read aloud with an
+  "Error:" prefix, and the answer is announced by screen readers like the other tools. Digits of other scripts (for example
+  Bengali) are accepted.
+* **Fair and testable.** Draws use a bounded generator (`RandomSource.nextLong(bound)`, backed by `SecureRandom`), so there is
+  no modulo bias; the source can be replaced (`Randomizer.toolSpec(source)`), which the tests do. The code is in
+  `core-math/.../tools/Randomizer.kt`.
+* **Same as the other tools:** each successful draw is also written to the tape as a tool record (it never becomes `ans`).
+  Unlike the other tools, coming back to the Randomizer does *not* work the answer out again, because that would roll new
+  numbers; the answer is on the tape instead.
+* Small shared additions for this: `ToolSpec` can name its main button (`actionLabel`, so the button says Flip / Roll /
+  Generate / Pick one instead of Calculate) and opt out of re-running on return (`rerunOnRestore`); `ToolField` has
+  `maxLength` (the picker keeps up to 4000 characters, other boxes still 600) and `plainText` (no row of maths signs);
+  `ExpressionField` has a `symbolRow` switch. Error answers on the Tools screen now carry an "Error:" spoken prefix.
+
 ### Changed (update 11: keypad letters, key centring, bigger spreadsheet)
 * **Separate "(" and ")" keys on the scientific keypad.** The single bracket key (tap for "(", hold for ")") is gone. The
   key at the old bracket place now types "(" (SHIFT: `%`, as before); the key to its right, where `x` was, types ")" (SHIFT:

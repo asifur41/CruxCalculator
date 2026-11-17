@@ -537,7 +537,7 @@ object Tools {
     /** All form-style tools, in the order they appear on screen. */
     val all: List<ToolSpec> = listOf(
         polynomial, simultaneous, solveFx, calculus, symbolic, oneVar, regression, distributions,
-        baseN, matrix, eigen, vector, complex, steps
+        baseN, matrix, eigen, vector, complex, steps, Randomizer.toolSpec()
     )
 
     fun byId(id: String): ToolSpec? = all.firstOrNull { it.id == id }

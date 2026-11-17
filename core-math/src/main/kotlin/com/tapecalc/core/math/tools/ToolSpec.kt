@@ -8,7 +8,11 @@ data class ToolField(
     val label: String,
     val hint: String = "",
     val multiline: Boolean = false,
-    val default: String = ""
+    val default: String = "",
+    /** The most characters the box keeps; longer input is cut. Most boxes hold a short expression, so 600 is plenty. */
+    val maxLength: Int = 600,
+    /** True for a box of ordinary words (names to pick from) rather than a maths expression: no row of maths signs, sentence-case keyboard. */
+    val plainText: Boolean = false
 )
 
 /** A one-of-several choice shown as chips (for example "Derivative / Integral / Sum"). */
@@ -36,6 +40,10 @@ class ToolInput(private val texts: Map<String, String>, private val choices: Map
  * all of it. A tool whose prompts depend on an earlier choice, like a calculator menu that asks for different things after
  * you pick Normal, Binomial or Poisson, also gives [visibleFields] and/or [visibleOptions]: functions from "which chip
  * is picked" to what is shown now.
+ *
+ * [actionLabel] names the main button for the current chips (the default is "Calculate"). A tool whose answer is a fresh
+ * random draw sets [rerunOnRestore] to false: the screen normally works an answer out again from the saved boxes when the
+ * person comes back to the tool, which for a random draw would quietly roll new numbers.
  */
 class ToolSpec(
     val id: String,
@@ -45,8 +53,13 @@ class ToolSpec(
     val options: List<ToolOption> = emptyList(),
     val visibleFields: ((choice: (String) -> Int) -> List<ToolField>)? = null,
     val visibleOptions: ((choice: (String) -> Int) -> List<ToolOption>)? = null,
+    val actionLabel: ((choice: (String) -> Int) -> String)? = null,
+    val rerunOnRestore: Boolean = true,
     val run: (ToolInput) -> ToolResult
 ) {
+    /** The text of the main button for the current chips. */
+    fun actionLabelFor(choice: (String) -> Int): String = actionLabel?.invoke(choice) ?: "Calculate"
+
     /** The boxes to show for the current chips; [choice] returns the picked index of an option id. */
     fun fieldsFor(choice: (String) -> Int): List<ToolField> = visibleFields?.invoke(choice) ?: fields
 

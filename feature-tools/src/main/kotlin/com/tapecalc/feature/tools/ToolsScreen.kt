@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.ShowChart
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material.icons.outlined.Timeline
@@ -60,11 +61,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tapecalc.core.math.Constants
@@ -109,6 +112,7 @@ private fun iconFor(id: String): ImageVector = when (id) {
     "vector" -> Icons.Outlined.Straighten
     "complex" -> Icons.Outlined.Calculate
     "steps" -> Icons.Outlined.FormatListNumbered
+    "random" -> Icons.Outlined.Shuffle
     GRAPH_ID -> Icons.Outlined.ShowChart
     CONSTANTS_ID -> Icons.Outlined.Science
     QR_ID -> Icons.Outlined.QrCode
@@ -280,8 +284,9 @@ private fun FormTool(
     }
 
     // Coming back to a tool that was showing an answer: work the answer out again from the saved boxes.
+    // (Not for a random draw: that would roll again, so the answer on screen would no longer match the tape.)
     LaunchedEffect(spec.id, store) {
-        if (store.get(ranKey) == "1") result = compute()
+        if (spec.rerunOnRestore && store.get(ranKey) == "1") result = compute()
     }
 
     Column(
@@ -321,7 +326,7 @@ private fun FormTool(
             ExpressionField(
                 value = texts[field.id] ?: "",
                 onValueChange = {
-                    val v = it.take(600)
+                    val v = it.take(field.maxLength)
                     texts[field.id] = v
                     store.put(textKey(field.id), v)
                 },
@@ -330,7 +335,11 @@ private fun FormTool(
                 placeholder = field.hint.ifEmpty { null },
                 singleLine = !field.multiline,
                 minLines = if (field.multiline) 3 else 1,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    capitalization = if (field.plainText) KeyboardCapitalization.Sentences else KeyboardCapitalization.None
+                ),
+                symbolRow = !field.plainText
             )
         }
 
@@ -345,7 +354,7 @@ private fun FormTool(
                 }
             },
             modifier = Modifier.fillMaxWidth()
-        ) { Text("Calculate") }
+        ) { Text(spec.actionLabelFor(picked)) }
 
         val r = result
         if (r != null) {
@@ -355,7 +364,12 @@ private fun FormTool(
             ) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     when (r) {
-                        is ToolResult.Err -> Text(r.message, color = MaterialTheme.colorScheme.error)
+                        // colour alone does not tell a screen-reader user that this is an error, so the spoken text says so
+                        is ToolResult.Err -> Text(
+                            r.message,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { contentDescription = "Error: ${r.message}" }
+                        )
                         is ToolResult.Ok -> r.lines.forEach { ResultRow(it) }
                     }
                 }

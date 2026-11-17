@@ -49,7 +49,9 @@ fun ExpressionField(
     minLines: Int = 1,
     isError: Boolean = false,
     supportingText: String? = null,
-    keyboardOptions: KeyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+    keyboardOptions: KeyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+    /** False for boxes that hold ordinary words (a list of names), where the row of maths signs would only get in the way. */
+    symbolRow: Boolean = true
 ) {
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     var rowWanted by remember { mutableStateOf(false) }
@@ -91,7 +93,7 @@ fun ExpressionField(
             } else null,
             keyboardOptions = keyboardOptions
         )
-        if (rowWanted && focused) {
+        if (symbolRow && rowWanted && focused) {
             SymbolRow(
                 onSymbol = { symbol ->
                     val sel = shown.selection

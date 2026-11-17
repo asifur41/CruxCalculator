@@ -49,6 +49,7 @@ The **Tools** tab collects extra maths tools. Each one works offline and shows p
 - **Matrices, vectors and complex numbers:** matrix calculations (up to 6 × 6), eigenvalues and determinant (up to 4 × 4), 2D and 3D vectors, complex arithmetic.
 - **BASE-N (logic):** binary, octal, decimal and hex with and, or, xor, not and shifts.
 - **Step by step:** see an expression worked out one operation at a time.
+- **Randomizer:** flip coins, roll dice (d4 to d100 or any number of sides), draw a random whole number between a minimum and a maximum, or pick one item from a list of choices.
 - **Graph:** plot up to three functions, pan, zoom, trace, and find roots and peaks.
 - **Constants:** a table of physical constants you can tap to use.
 - **QR code:** turn any text, result or equation into a QR code.
