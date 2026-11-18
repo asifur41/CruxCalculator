@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -130,36 +129,23 @@ fun CalculatorDisplay(
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val widthDp = maxWidth.value
             val displayMaxHeight = maxHeight
-            if (scientific) {
-                // Two zones. The earlier calculations start right under the top buttons; the line being worked on sits
-                // at the bottom and always has room for at least two lines of the large text.
-                val workMin = (44f * scale * 2.4f).dp
-                Column(Modifier.fillMaxSize()) {
-                    // The rows are measured, not estimated: only whole rows that fit are drawn (the oldest are dropped), so
-                    // a row can never be cut in half by the working line below it.
-                    Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                        HistoryLines(miniTape.takeLast(maxTapeLines), true, actions)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = workMin, max = displayMaxHeight * 0.8f)
-                            .verticalScroll(rememberScrollState(), reverseScrolling = true),
-                        contentAlignment = Alignment.BottomEnd
-                    ) {
-                        WorkingArea(state, true, widthDp, actions)
-                    }
+            // Two zones on both screens. The earlier calculations start right under the top buttons; the line being
+            // worked on sits at the bottom and always has room for at least two lines of its large text.
+            val workMin = if (scientific) (44f * scale * 2.4f).dp else (56f * scale * 2f).dp
+            Column(Modifier.fillMaxSize()) {
+                // The rows are measured, not estimated: only whole rows that fit are drawn (the oldest are dropped), so
+                // a row can never be cut in half by the working line below it.
+                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                    HistoryLines(miniTape.takeLast(maxTapeLines), scientific, actions)
                 }
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), reverseScrolling = true),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        HistoryLines(miniTape.takeLast(maxTapeLines), false, actions)
-                        Spacer(Modifier.height(8.dp))
-                        WorkingArea(state, false, widthDp, actions)
-                    }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = workMin, max = displayMaxHeight * 0.8f)
+                        .verticalScroll(rememberScrollState(), reverseScrolling = true),
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    WorkingArea(state, scientific, widthDp, actions)
                 }
             }
         }
@@ -177,16 +163,9 @@ private val HISTORY_ROW_GAP = 4.dp
 /** The earlier calculations, oldest first, as small muted lines, each with its own height and a gap before the next. */
 @Composable
 private fun HistoryLines(lines: List<MiniTapeLine>, scientific: Boolean, actions: DisplayActions) {
-    val content: @Composable () -> Unit = {
+    // Same stacking on both screens, so the history sits at the same place; only the tap action differs (see HistoryLine).
+    FittedRows(gap = HISTORY_ROW_GAP, modifier = Modifier.fillMaxWidth()) {
         lines.forEach { line -> HistoryLine(line, scientific, actions) }
-    }
-    if (scientific) {
-        FittedRows(gap = HISTORY_ROW_GAP, modifier = Modifier.fillMaxWidth(), content = content)
-    } else {
-        // the basic screen scrolls, so every line is kept
-        Column(verticalArrangement = Arrangement.spacedBy(HISTORY_ROW_GAP), horizontalAlignment = Alignment.End) {
-            content()
-        }
     }
 }
 
