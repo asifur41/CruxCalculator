@@ -43,6 +43,7 @@ import com.tapecalc.core.math.sheet.SheetRef
 import com.tapecalc.core.math.sheet.SheetState
 import com.tapecalc.core.ui.ExpressionField
 import com.tapecalc.core.ui.LocalToolStateStore
+import com.tapecalc.core.ui.MathKeyboardKind
 
 private const val SHEET_KEY = "tool.sheet.cells"
 private val ROW_HEADER_WIDTH = 40.dp
@@ -114,7 +115,8 @@ internal fun SheetPane(
             onValueChange = { edit(sheet.with(anchorCol, anchorRow, it)) },
             modifier = Modifier.fillMaxWidth(),
             label = "Cell ${SheetRef.name(anchorCol, anchorRow)}",
-            placeholder = "12   or   =A1+B1   or   =sum(A1:A9)"
+            placeholder = "12   or   =A1+B1   or   =sum(A1:A9)",
+            keyboardKind = MathKeyboardKind.FORMULA
         )
 
         // what the cell works out to, or why it cannot

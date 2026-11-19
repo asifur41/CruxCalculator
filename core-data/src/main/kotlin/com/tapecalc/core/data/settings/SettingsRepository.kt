@@ -35,6 +35,8 @@ data class AppSettings(
     val hapticLevel: Int = 2,
     val soundEnabled: Boolean = false,
     val leftHanded: Boolean = false,
+    /** The optional built-in keyboard for the text boxes outside the Basic and Scientific keypads. Off by default. */
+    val mathKeyboard: Boolean = false,
     val angleMode: String = "DEG",
     val autoRecalc: Boolean = true,
     val groupDigits: Boolean = false,
@@ -62,6 +64,7 @@ class SettingsRepository(private val context: Context) {
         val HAPTIC = intPreferencesKey("haptic_level")
         val SOUND = booleanPreferencesKey("sound")
         val LEFT_HANDED = booleanPreferencesKey("left_handed")
+        val MATH_KEYBOARD = booleanPreferencesKey("math_keyboard")
         val ANGLE = stringPreferencesKey("angle_mode")
         val AUTO_RECALC = booleanPreferencesKey("auto_recalc")
         val GROUP = booleanPreferencesKey("group_digits")
@@ -84,6 +87,7 @@ class SettingsRepository(private val context: Context) {
             hapticLevel = this[Keys.HAPTIC] ?: d.hapticLevel,
             soundEnabled = this[Keys.SOUND] ?: d.soundEnabled,
             leftHanded = this[Keys.LEFT_HANDED] ?: d.leftHanded,
+            mathKeyboard = this[Keys.MATH_KEYBOARD] ?: d.mathKeyboard,
             angleMode = this[Keys.ANGLE] ?: d.angleMode,
             autoRecalc = this[Keys.AUTO_RECALC] ?: d.autoRecalc,
             groupDigits = this[Keys.GROUP] ?: d.groupDigits,
@@ -123,6 +127,7 @@ class SettingsRepository(private val context: Context) {
                 putInt("haptic", s.hapticLevel)
                 putBoolean("sound", s.soundEnabled)
                 putBoolean("left_handed", s.leftHanded)
+                putBoolean("math_keyboard", s.mathKeyboard)
                 putString("angle", s.angleMode)
                 putBoolean("auto_recalc", s.autoRecalc)
                 putBoolean("group", s.groupDigits)
@@ -152,6 +157,7 @@ class SettingsRepository(private val context: Context) {
                 hapticLevel = p.getInt("haptic", d.hapticLevel),
                 soundEnabled = p.getBoolean("sound", d.soundEnabled),
                 leftHanded = p.getBoolean("left_handed", d.leftHanded),
+                mathKeyboard = p.getBoolean("math_keyboard", d.mathKeyboard),
                 angleMode = p.getString("angle", null) ?: d.angleMode,
                 autoRecalc = p.getBoolean("auto_recalc", d.autoRecalc),
                 groupDigits = p.getBoolean("group", d.groupDigits),
@@ -192,6 +198,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.HAPTIC] = s.hapticLevel.coerceIn(0, 3)
             prefs[Keys.SOUND] = s.soundEnabled
             prefs[Keys.LEFT_HANDED] = s.leftHanded
+            prefs[Keys.MATH_KEYBOARD] = s.mathKeyboard
             prefs[Keys.ANGLE] = s.angleMode
             prefs[Keys.AUTO_RECALC] = s.autoRecalc
             prefs[Keys.GROUP] = s.groupDigits
