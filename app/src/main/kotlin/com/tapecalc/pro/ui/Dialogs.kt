@@ -46,7 +46,8 @@ fun TypeExpressionDialog(initial: String, onCalculate: (String) -> Unit, onDismi
         onDismissRequest = onDismiss,
         title = { Text("Type an expression") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // scrolls, so the built-in keyboard (when it is switched on) never pushes the buttons off a small screen
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExpressionField(
                     value = text,
                     onValueChange = { text = it },

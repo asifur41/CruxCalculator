@@ -17,10 +17,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tapecalc.core.data.settings.AppSettings
 import com.tapecalc.core.ui.ButtonShape
 import com.tapecalc.core.ui.KeypadStyle
+import com.tapecalc.core.ui.LocalMathKeyboard
 import com.tapecalc.core.ui.LocalToolStateStore
+import com.tapecalc.core.ui.MathKeyboardConfig
 import com.tapecalc.core.ui.ThemeSettings
 import com.tapecalc.core.ui.TapeTheme
 import com.tapecalc.pro.ui.PrefsToolStateStore
+import com.tapecalc.pro.ui.rememberFeedback
 import com.tapecalc.core.ui.resolveTheme
 import com.tapecalc.pro.presentation.CalculatorViewModel
 import com.tapecalc.pro.ui.AppRoot
@@ -61,7 +64,19 @@ class MainActivity : ComponentActivity() {
                 SideEffect { window.setBackgroundDrawable(ColorDrawable(background)) }
                 // what the person typed in the tools, and which screen they were on, is kept on the device
                 val stateStore = remember { PrefsToolStateStore(applicationContext) }
-                CompositionLocalProvider(LocalToolStateStore provides stateStore) {
+                // The optional built-in keyboard: off unless the person switched it on in Settings. Its keys use the
+                // same haptics and click sound as the keypads.
+                val feedback = rememberFeedback()
+                val keyboard = remember(settings.mathKeyboard, settings.hapticLevel, settings.soundEnabled, feedback) {
+                    MathKeyboardConfig(
+                        enabled = settings.mathKeyboard,
+                        onKeyPress = { feedback.key(false, settings.hapticLevel, settings.soundEnabled) }
+                    )
+                }
+                CompositionLocalProvider(
+                    LocalToolStateStore provides stateStore,
+                    LocalMathKeyboard provides keyboard
+                ) {
                     AppRoot(viewModel)
                 }
             }

@@ -133,6 +133,14 @@ fun SettingsScreen(
             modifier = Modifier.semantics { stateDescription = "${(settings.fontScale * 100).toInt()} percent" }
         )
 
+        SectionTitle("Typing")
+        SwitchRow(
+            title = "Built-in keyboard",
+            subtitle = "Replaces the phone's keyboard in the expression boxes of the Tools (graph, statistics, spreadsheet), the Type an expression box and the Edit calculation screen with one made for calculations: numbers, letters, functions and signs. The Basic and Scientific keypads stay as they are.",
+            checked = settings.mathKeyboard,
+            onCheckedChange = { v -> onChange { it.copy(mathKeyboard = v) } }
+        )
+
         SectionTitle("Feedback")
         SwitchRow(
             title = "Haptics",

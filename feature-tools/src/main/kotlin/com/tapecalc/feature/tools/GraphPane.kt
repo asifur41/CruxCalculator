@@ -64,6 +64,7 @@ import com.tapecalc.core.math.graph.GraphFunction
 import com.tapecalc.core.math.graph.Graphing
 import com.tapecalc.core.precision.NumberFormatter
 import com.tapecalc.core.ui.ExpressionField
+import com.tapecalc.core.ui.LocalMathKeyboard
 import com.tapecalc.core.ui.LocalToolStateStore
 import com.tapecalc.core.ui.rememberStoredText
 import java.math.BigDecimal
@@ -267,7 +268,14 @@ internal fun GraphPane(angleMode: AngleMode, onBack: () -> Unit, modifier: Modif
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                     tonalElevation = 4.dp
                 ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // With the optional built-in keyboard on, the panel can be taller than a landscape screen, so it
+                    // scrolls. With it off (the default) the panel is laid out exactly as before.
+                    val keyboardOn = LocalMathKeyboard.current.enabled
+                    val panelScroll = rememberScrollState()
+                    Column(
+                        (if (keyboardOn) Modifier.heightIn(max = 460.dp).verticalScroll(panelScroll) else Modifier).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         listOf(eq1, eq2, eq3).forEachIndexed { i, stored ->
                             val err = (compiled[i].second as? GraphCompile.Err)?.error?.message
                             ExpressionField(
